@@ -6,127 +6,127 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"logistics-platform/lib/middlewares/cors"
+	"net/http"
+	"sync"
+
+	"logistics-platform/lib/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/segmentio/kafka-go"
-	"github.com/spf13/viper"
-
-	"net/http"
-	"time"
 )
 
 var (
-	upgrader           = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-	driverConnections  = make(map[string]*websocket.Conn)
-	userConnections    = make(map[string]*websocket.Conn)
-	LocationWriter     *kafka.Writer
-	NotificationReader *kafka.Reader
+	upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 )
 
-type DriverLocation struct {
-	DriverID  string    `json:"driver_id"`
-	Latitude  float64   `json:"latitude"`
-	Longitude float64   `json:"longitude"`
-	Timestamp time.Time `json:"timestamp"`
-}
-
-type BookingNotification struct {
-	UserID string  `json:"user_id"`
-	Price  float64 `json:"price"`
+type NotificationService struct {
+	driverConnections  sync.Map
+	locationWriter     *kafka.Writer
+	notificationReader *kafka.Reader
 }
 
 func main() {
-	viper.SetConfigFile(".env")
-	viper.ReadInConfig()
+	if err := utils.LoadConfig(); err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
 
-	initKafka()
+	service := &NotificationService{
+		locationWriter:     utils.InitKafkaWriter("driver_locations"),
+		notificationReader: utils.InitKafkaReader("driver_notification", "test-consumer-group"),
+	}
 
 	router := gin.Default()
-	router.GET("/driver/ws", driverWebSocket)
+	router.Use(cors.CORSMiddleware())
+	router.GET("/driver/ws", service.handleDriverWebSocket)
+	router.GET("/ping", func(c *gin.Context) {
+		c.String(http.StatusOK, "pong")
+	})
 
-	go consumeNotifications()
+	go service.consumeNotifications()
 
-	router.Run(":8080")
+	server := &http.Server{
+		Addr:    ":8080",
+		Handler: router,
+	}
+
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start server: %v", err)
+		}
+	}()
+
+	utils.WaitForShutdown(server, service.locationWriter, service.notificationReader)
 }
 
-func driverWebSocket(c *gin.Context) {
+func (s *NotificationService) handleDriverWebSocket(c *gin.Context) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		log.Println(err)
+		log.Printf("Failed to upgrade connection: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	driverID := c.Query("driver_id")
+	if driverID == "" {
+		log.Println("Driver ID is required")
 		return
 	}
 
-	driverID := c.Query("driver_id")
-	driverConnections[driverID] = conn
+	s.driverConnections.Store(driverID, conn)
+	defer s.driverConnections.Delete(driverID)
 
 	for {
-		var location DriverLocation
-		err := conn.ReadJSON(&location)
-		if err != nil {
-			log.Println(err)
+		var location utils.DriverLocation
+		if err := conn.ReadJSON(&location); err != nil {
+			log.Printf("Error reading JSON: %v", err)
 			break
 		}
+		location.DriverID = driverID
 
-		message, err := json.Marshal(location)
-		if err != nil {
-			log.Println(err)
-			break
-		}
-
-		LocationWriter.WriteMessages(c, kafka.Message{
-			Value: message,
-		})
-	}
-}
-
-func initKafka() {
-	brokers := viper.GetStringSlice("KAFKA_ADDR")
-
-	LocationWriter = kafka.NewWriter(kafka.WriterConfig{
-		Brokers:  brokers,
-		Topic:    "driver_locations",
-		Balancer: &kafka.LeastBytes{},
-	})
-
-	NotificationReader = kafka.NewReader(kafka.ReaderConfig{
-		Brokers: brokers,
-		Topic:   "driver_notification",
-		GroupID: "notification",
-	})
-}
-
-func consumeNotifications() {
-	for {
-		msg, err := NotificationReader.ReadMessage(context.Background())
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-
-		var notification BookingNotification
-		err = json.Unmarshal(msg.Value, &notification)
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-
-		message := "You have a new booking request from " + notification.UserID + " for $" + fmt.Sprintf("%.2f", notification.Price)
-		err = sendNotification(notification.UserID, message)
-		if err != nil {
-			log.Println(err)
-			continue
+		if err := s.sendLocationUpdate(location); err != nil {
+			log.Printf("Error sending location update: %v", err)
 		}
 	}
 }
 
-func sendNotification(userID, message string) error {
-	conn, ok := driverConnections[userID]
+func (s *NotificationService) sendLocationUpdate(location utils.DriverLocation) error {
+	message, err := json.Marshal(location)
+	if err != nil {
+		return fmt.Errorf("failed to marshal location: %w", err)
+	}
+
+	return s.locationWriter.WriteMessages(context.Background(),
+		kafka.Message{Value: message})
+}
+
+func (s *NotificationService) consumeNotifications() {
+	for {
+		msg, err := s.notificationReader.ReadMessage(context.Background())
+		if err != nil {
+			log.Printf("Error reading message: %v", err)
+			continue
+		}
+
+		var notification utils.BookingNotification
+		if err := json.Unmarshal(msg.Value, &notification); err != nil {
+			log.Printf("Error unmarshaling notification: %v", err)
+			continue
+		}
+
+		if err := s.sendNotification(notification); err != nil {
+			log.Printf("Error sending notification: %v", err)
+		}
+	}
+}
+
+func (s *NotificationService) sendNotification(notification utils.BookingNotification) error {
+	conn, ok := s.driverConnections.Load(notification.DriverID)
 	if !ok {
-		return fmt.Errorf("driver not connected")
+		return fmt.Errorf("driver %s not connected", notification.DriverID)
 	}
 
-	return conn.WriteJSON(map[string]string{
-		"message": message,
-	})
+	message := fmt.Sprintf("You have a new booking request from %s for $%.2f", notification.UserID, notification.Price)
+	return conn.(*websocket.Conn).WriteJSON(map[string]string{"message": message})
 }

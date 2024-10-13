@@ -4,176 +4,140 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
-	"os"
-	"os/signal"
-	"time"
+	"net/http"
+
+	"logistics-platform/lib/middlewares/cors"
+	"logistics-platform/lib/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"github.com/segmentio/kafka-go"
-	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var (
-	redisClient        *redis.Client
+type BookingService struct {
 	mongoClient        *mongo.Client
-	NotificationWriter *kafka.Writer
-)
+	notificationWriter *kafka.Writer
+	redisClient        *redis.Client
+}
 
 type BookingRequest struct {
-	UserID      string   `json:"user_id" bson:"user_id"`
-	Pickup      GeoPoint `json:"pickup" bson:"pickup"`
-	Dropoff     GeoPoint `json:"dropoff" bson:"dropoff"`
-	VehicleType string   `json:"vehicle_type" bson:"vehicle_type"`
-	Price       float64  `json:"price" bson:"price"`
-}
-
-type GeoPoint struct {
-	Latitude  float64 `json:"latitude" bson:"latitude"`
-	Longitude float64 `json:"longitude" bson:"longitude"`
-}
-
-type DriverLocation struct {
-	DriverID  string    `json:"driver_id"`
-	Latitude  float64   `json:"latitude"`
-	Longitude float64   `json:"longitude"`
-	Timestamp time.Time `json:"timestamp"`
+	UserID      string         `json:"user_id" bson:"user_id"`
+	Pickup      utils.GeoPoint `json:"pickup" bson:"pickup"`
+	Dropoff     utils.GeoPoint `json:"dropoff" bson:"dropoff"`
+	VehicleType string         `json:"vehicle_type" bson:"vehicle_type"`
+	Price       float64        `json:"price" bson:"price"`
 }
 
 func main() {
-	// Load configuration
-	viper.SetConfigFile(".env")
-	viper.ReadInConfig()
+	if err := utils.LoadConfig(); err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
 
-	// Initialize connections
-	initRedis()
-	initMongoDB()
-	initKafka()
+	mongoClient, err := utils.InitMongoDB()
+	defer mongoClient.Disconnect(context.Background())
+	if err != nil {
+		log.Fatalf("Failed to connect to MongoDB: %v", err)
+	}
 
-	// Set up Gin router for HTTP endpoints
+	redisClient, err := utils.InitRedis()
+	if err != nil {
+		log.Fatalf("Failed to connect to Redis: %v", err)
+	}
+
+	service := &BookingService{
+		mongoClient:        mongoClient,
+		notificationWriter: utils.InitKafkaWriter("driver_notification"),
+		redisClient:        redisClient,
+	}
+
 	router := gin.Default()
-	router.POST("/booking", handleBookingRequest)
+	router.Use(cors.CORSMiddleware())
+	router.POST("/booking", service.handleBookingRequest)
+	router.GET("/ping", func(c *gin.Context) {
+		c.String(http.StatusOK, "pong")
+	})
 
-	// Start the HTTP server
+	server := &http.Server{
+		Addr:    ":8084",
+		Handler: router,
+	}
+
 	go func() {
-		if err := router.Run(":8084"); err != nil {
-			log.Fatalf("Failed to run server: %v", err)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start server: %v", err)
 		}
 	}()
 
-	// Graceful shutdown
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt)
-	<-quit
-	log.Println("Shutting down server...")
-
-	// Close connections
-	redisClient.Close()
-	mongoClient.Disconnect(context.Background())
-	NotificationWriter.Close()
-
-	log.Println("Server exiting")
+	utils.WaitForShutdown(server, service.notificationWriter, redisClient)
 }
 
-func initRedis() {
-	redisURL := viper.GetString("REDIS_URL")
-	opt, err := redis.ParseURL(redisURL)
-	if err != nil {
-		log.Fatal("Error parsing Redis URL: ", err)
-	}
-	redisClient = redis.NewClient(opt)
-	_, err = redisClient.Ping(context.Background()).Result()
-	if err != nil {
-		log.Fatal("Error connecting to Redis: ", err)
-	}
-}
-
-func initMongoDB() {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(viper.GetString("MONGO_URI")))
-	if err != nil {
-		log.Fatal(err)
-	}
-	mongoClient = client
-}
-
-func initKafka() {
-	NotificationWriter = &kafka.Writer{
-		Addr:     kafka.TCP(viper.GetString("KAFKA_ADDR")),
-		Topic:    "driver_notification",
-		Balancer: &kafka.LeastBytes{},
-	}
-}
-
-func handleBookingRequest(c *gin.Context) {
+func (s *BookingService) handleBookingRequest(c *gin.Context) {
 	var bookingReq BookingRequest
 	if err := c.ShouldBindJSON(&bookingReq); err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	go processBookingRequest(bookingReq)
+	if err := s.processBookingRequest(c.Request.Context(), bookingReq); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process booking request"})
+		return
+	}
 
-	c.JSON(200, gin.H{"message": "Booking request received"})
+	c.JSON(http.StatusOK, gin.H{"message": "Booking request received"})
 }
 
-func processBookingRequest(bookingReq BookingRequest) {
-	// Store booking request in MongoDB
-	collection := mongoClient.Database("logistics").Collection("booking_requests")
-	_, err := collection.InsertOne(context.Background(), bookingReq)
+func (s *BookingService) processBookingRequest(ctx context.Context, bookingReq BookingRequest) error {
+	collection := s.mongoClient.Database("logistics").Collection("booking_requests")
+	_, err := collection.InsertOne(ctx, bookingReq)
 	if err != nil {
-		log.Printf("Error storing booking request: %v", err)
-		return
+		return fmt.Errorf("error storing booking request: %w", err)
 	}
 
-	// Find nearby drivers
-	nearbyDrivers := findNearbyDrivers(bookingReq.Pickup, bookingReq.VehicleType)
-
-	// Notify nearby drivers
-	for _, driver := range nearbyDrivers {
-		notifyDriver(driver, bookingReq)
+	nearbyDrivers, err := s.findNearbyDrivers(ctx, bookingReq.Pickup, bookingReq.VehicleType)
+	if err != nil {
+		return fmt.Errorf("error finding nearby drivers: %w", err)
 	}
+
+	for _, driverID := range nearbyDrivers {
+		go func(driverID string) {
+			if err := s.notifyDriver(driverID, bookingReq); err != nil {
+				log.Printf("Error notifying driver %s: %v", driverID, err)
+			}
+		}(driverID)
+	}
+
+	return nil
 }
 
-func findNearbyDrivers(pickup GeoPoint, vehicleType string) []string {
-	// This is a simplified version. In a real-world scenario, you'd use more sophisticated
-	// geospatial queries and filtering based on vehicle type.
-	ctx := context.Background()
-	drivers, err := redisClient.GeoRadius(ctx, "driver_locations", pickup.Longitude, pickup.Latitude, &redis.GeoRadiusQuery{
-		Radius: 50, // 5 km radius
+func (s *BookingService) findNearbyDrivers(ctx context.Context, pickup utils.GeoPoint, vehicleType string) ([]string, error) {
+	drivers, err := s.redisClient.GeoRadius(ctx, "driver_locations", pickup.Longitude, pickup.Latitude, &redis.GeoRadiusQuery{
+		Radius: 100,
 		Unit:   "km",
 	}).Result()
-
 	if err != nil {
-		log.Printf("Error finding nearby drivers: %v", err)
-		return nil
+		return nil, fmt.Errorf("error finding nearby drivers: %w", err)
 	}
 
 	var nearbyDrivers []string
 	for _, driver := range drivers {
 		nearbyDrivers = append(nearbyDrivers, driver.Name)
 	}
-
-	return nearbyDrivers
+	return nearbyDrivers, nil
 }
 
-func notifyDriver(driverID string, bookingReq BookingRequest) {
-	notification := map[string]interface{}{
-		"type":     "new_booking",
-		"driverID": driverID,
-		"booking":  bookingReq,
+func (s *BookingService) notifyDriver(driverID string, bookingReq BookingRequest) error {
+	notification := utils.BookingNotification{
+		UserID:   bookingReq.UserID,
+		Price:    bookingReq.Price,
+		DriverID: driverID,
 	}
-	notificationJSON, _ := json.Marshal(notification)
-
-	err := NotificationWriter.WriteMessages(context.Background(), kafka.Message{
-		Value: notificationJSON,
-	})
+	notificationJSON, err := json.Marshal(notification)
 	if err != nil {
-		log.Printf("Error sending notification to driver %s: %v", driverID, err)
+		return fmt.Errorf("error marshaling notification: %w", err)
 	}
 
+	return s.notificationWriter.WriteMessages(context.Background(), kafka.Message{Value: notificationJSON})
 }

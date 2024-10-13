@@ -5,101 +5,70 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"os"
-	"os/signal"
-	"time"
+
+	"logistics-platform/lib/utils"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/segmentio/kafka-go"
-	"github.com/spf13/viper"
 )
 
-var (
+type DriverLocationService struct {
 	redisClient *redis.Client
 	kafkaReader *kafka.Reader
-)
-
-type DriverLocation struct {
-	DriverID  string    `json:"driver_id"`
-	Latitude  float64   `json:"latitude"`
-	Longitude float64   `json:"longitude"`
-	Timestamp time.Time `json:"timestamp"`
 }
 
 func main() {
-	// Load configuration
-	viper.SetConfigFile(".env")
-	viper.ReadInConfig()
-
-	// Initialize connections
-	initRedis()
-	initKafka()
-
-	// Start consuming driver location updates in a Goroutine
-	go consumeDriverLocations()
-
-	// Graceful shutdown
-	waitForShutdown()
-}
-
-func waitForShutdown() {
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt)
-	<-quit
-	log.Println("Shutting down server...")
-
-	// Close connections
-	redisClient.Close()
-	kafkaReader.Close()
-
-	log.Println("Server exiting")
-}
-
-func initRedis() {
-	redisURL := viper.GetString("REDIS_URL")
-	opt, err := redis.ParseURL(redisURL)
-	if err != nil {
-		log.Fatal("Error parsing Redis URL: ", err)
+	if err := utils.LoadConfig(); err != nil {
+		log.Fatalf("Failed to load config: %v", err)
 	}
-	redisClient = redis.NewClient(opt)
-	_, err = redisClient.Ping(context.Background()).Result()
+
+	redisClient, err := utils.InitRedis()
 	if err != nil {
-		log.Fatal("Error connecting to Redis: ", err)
+		log.Fatalf("Failed to connect to Redis: %v", err)
 	}
+
+	service := &DriverLocationService{
+		redisClient: redisClient,
+		kafkaReader: utils.InitKafkaReader("driver_locations", "driver-location-service"),
+	}
+
+	go service.consumeDriverLocations()
+
+	utils.WaitForShutdown(redisClient, service.kafkaReader)
 }
 
-func initKafka() {
-	kafkaReader = kafka.NewReader(kafka.ReaderConfig{
-		Brokers: []string{viper.GetString("KAFKA_ADDR")},
-		Topic:   "driver_locations",
-		GroupID: "driver-location-service",
-	})
-}
-
-func consumeDriverLocations() {
+func (s *DriverLocationService) consumeDriverLocations() {
 	for {
-		msg, err := kafkaReader.ReadMessage(context.Background())
+		msg, err := s.kafkaReader.ReadMessage(context.Background())
 		if err != nil {
 			log.Printf("Error reading message from Kafka: %v", err)
 			continue
 		}
 
-		var location DriverLocation
-		err = json.Unmarshal(msg.Value, &location)
-		if err != nil {
+		log.Printf("Received message: %s", string(msg.Value))
+
+		var location utils.DriverLocation
+		if err := json.Unmarshal(msg.Value, &location); err != nil {
 			log.Printf("Error unmarshaling location update: %v", err)
 			continue
 		}
 
-		storeDriverLocation(location)
+		log.Printf("Updating driver location: %v", location)
+
+		if err := s.updateDriverLocation(location); err != nil {
+			log.Printf("Error updating driver location: %v", err)
+		}
+		log.Printf("Driver location updated successfully")
 	}
 }
 
-func storeDriverLocation(location DriverLocation) {
-	// Store driver location in Redis
-	ctx := context.Background()
-	err := redisClient.Set(ctx, location.DriverID, location, 10*time.Second).Err()
-	if err != nil {
-		log.Printf("Error storing driver location in Redis: %v", err)
-	}
+// set the driver location in Redis so that it can be used by the booking service later to find nearby drivers
+func (s *DriverLocationService) updateDriverLocation(location utils.DriverLocation) error {
+	err := s.redisClient.GeoAdd(context.Background(), "driver_locations", &redis.GeoLocation{
+		Name:      location.DriverID,
+		Longitude: location.Location.Longitude,
+		Latitude:  location.Location.Latitude,
+	}).Err()
+
+	return err
 }
