@@ -3,7 +3,7 @@ import Navbar from '../components/Navbar';
 import { Button } from 'baseui/button';
 import { Card } from 'baseui/card';
 import { useStyletron } from 'baseui';
-import { Label } from 'baseui/form-control/styled-components';
+import BookingNotification from '../components/BookingNotification'; // Import the custom notification component
 
 const DriverdashBoard = () => {
   if (!localStorage.getItem('token') || localStorage.getItem('userType') !== 'driver') {
@@ -13,9 +13,11 @@ const DriverdashBoard = () => {
   const [css] = useStyletron();
   const [location, setLocation] = useState(null);
   const [ws, setWs] = useState(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [bookingRequest, setBookingRequest] = useState(null); // State to store booking request
+
   const token = localStorage.getItem('token');
   const driverID = localStorage.getItem('driverID');
-  const [isConnected, setIsConnected] = useState(false);
 
   const startCommunication = () => {
     if (!driverID) {
@@ -33,8 +35,8 @@ const DriverdashBoard = () => {
 
     socket.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      setLocation(data);
-      console.log('Received location:', data);
+      // Set the booking request data to show the notification
+      setBookingRequest(data);
     };
 
     socket.onerror = (error) => {
@@ -52,10 +54,22 @@ const DriverdashBoard = () => {
     };
   };
 
+  const handleConfirmBooking = () => {
+    console.log('Booking confirmed');
+    // Handle confirmation logic here, e.g., send confirmation to server
+    setBookingRequest(null); // Hide notification after confirmation
+  };
+
+  const handleIgnoreBooking = () => {
+    console.log('Booking ignored');
+    // Handle ignore logic here
+    setBookingRequest(null); // Hide notification after ignoring
+  };
+
   useEffect(() => {
     const interval = setInterval(() => {
       sendLocation();
-    }, 15000); 
+    }, 15000);
 
     return () => clearInterval(interval);
   }, [ws]);
@@ -74,9 +88,8 @@ const DriverdashBoard = () => {
           console.log('Sent location:', loc);
         });
       } else {
-        // request location permission
         console.error('Location permission denied');
-        }
+      }
     } else {
       console.error('WebSocket is not open. Cannot send location.');
     }
@@ -98,15 +111,14 @@ const DriverdashBoard = () => {
           <Button onClick={startCommunication} disabled={isConnected}>
             Start Communication
           </Button>
-          {location && (
-            <div className={css({ marginTop: "20px" })}>
-              <h3>Last Location</h3>
-              <Label2>Latitude: {location.latitude}</Label2>
-              <Label2>Longitude: {location.longitude}</Label2>
-              <Label2>Timestamp: {location.timestamp}</Label2>
-            </div>
-          )}
         </Card>
+        {bookingRequest && (
+          <BookingNotification
+            booking={bookingRequest}
+            onConfirm={handleConfirmBooking}
+            onIgnore={handleIgnoreBooking}
+          />
+        )}
       </div>
     </div>
   );

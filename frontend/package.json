@@ -15,6 +15,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.27.0",
+    "react-toastify": "^10.0.6",
     "styletron-engine-monolithic": "^1.0.0",
     "styletron-react": "^6.1.1"
   },
