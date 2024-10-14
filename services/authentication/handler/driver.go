@@ -2,10 +2,12 @@ package handler
 
 import (
 	"context"
+	"log"
 	"logistics-platform/lib/database"
 	"logistics-platform/lib/models"
 	"logistics-platform/lib/token"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -31,7 +33,32 @@ func RegisterDriver(c *gin.Context) {
 }
 
 func GetDriverProfile(c *gin.Context) {
+	// authenticate user
+	headerAuthToken := c.GetHeader("Authorization")
+	if headerAuthToken == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing auth token"})
+		return
+	}
+
+	authToken := strings.TrimPrefix(headerAuthToken, "Bearer ")
+	if authToken == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid auth token"})
+		return
+	}
+
+	// validate token
+	user, err := token.GetUserFromToken(authToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid auth token"})
+		return
+	}
+
 	driverID := c.Param("id")
+
+	if user.UserID != driverID {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized access"})
+		return
+	}
 
 	row := database.PostgreSQLConn.QueryRow(
 		context.Background(),
@@ -40,7 +67,7 @@ func GetDriverProfile(c *gin.Context) {
 	)
 
 	var driver models.VehicleDriver
-	err := row.Scan(&driver.ID, &driver.Name, &driver.Email, &driver.VehicleType, &driver.VehicleVolume)
+	err = row.Scan(&driver.ID, &driver.Name, &driver.Email, &driver.VehicleType, &driver.VehicleVolume)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get driver", "message": err.Error()})
 		return
@@ -68,11 +95,12 @@ func LoginDriver(c *gin.Context) {
 		return
 	}
 
+	log.Println("driver", driver)
 	token, err := token.GenerateToken(driver.ID, driver.Name)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token", "message": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"token": token})
+	c.JSON(http.StatusOK, gin.H{"token": token, "ID": driver.ID, "name": driver.Name})
 }
