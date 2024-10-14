@@ -6,10 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"logistics-platform/lib/token"
 	"net/http"
-	"strings"
 
+	"logistics-platform/lib/middlewares/auth"
 	"logistics-platform/lib/middlewares/cors"
 	"logistics-platform/lib/utils"
 
@@ -88,11 +87,15 @@ func main() {
 
 	router := gin.Default()
 	router.Use(cors.CORSMiddleware())
-	router.POST("/booking/accept", service.handleBookingAccept)
-	router.POST("/booking", service.handleBookingRequest)
 	router.GET("/ping", func(c *gin.Context) {
 		c.String(http.StatusOK, "pong")
 	})
+
+	router.Use(auth.AuthInjectionMiddleware())
+	{
+		router.POST("/booking/accept", service.handleBookingAccept)
+		router.POST("/booking", service.handleBookingRequest)
+	}
 
 	server := &http.Server{
 		Addr:    ":8084",
@@ -109,22 +112,14 @@ func main() {
 }
 
 func (s *BookingService) handleBookingAccept(c *gin.Context) {
-	// Authenticate driver
-	headerAuthToken := c.GetHeader("Authorization")
-	if headerAuthToken == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing auth token"})
-		return
-	}
-
-	authToken := strings.TrimPrefix(headerAuthToken, "Bearer ")
-	if authToken == "" {
+	driverUser, ok := c.Get("user")
+	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid auth token"})
 		return
 	}
 
-	// validate token
-	driver, err := token.GetUserFromToken(authToken)
-	if err != nil {
+	driver, ok := driverUser.(utils.UserRequest)
+	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid auth token"})
 		return
 	}
@@ -200,25 +195,13 @@ func (s *BookingService) handleBookingRequest(c *gin.Context) {
 		return
 	}
 
-	// authenticate user
-	headerAuthToken := c.GetHeader("Authorization")
-	if headerAuthToken == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing auth token"})
-		return
-	}
-
-	authToken := strings.TrimPrefix(headerAuthToken, "Bearer ")
-	if authToken == "" {
+	authUser, ok := c.Get("user")
+	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid auth token"})
 		return
 	}
 
-	// validate token
-	user, err := token.GetUserFromToken(authToken)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid auth token"})
-		return
-	}
+	user, _ := authUser.(utils.UserRequest)
 
 	bookingReq.UserID = user.UserID
 	bookingReq.UserName = user.UserName

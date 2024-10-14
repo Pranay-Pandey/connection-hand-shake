@@ -6,8 +6,8 @@ import (
 	"logistics-platform/lib/database"
 	"logistics-platform/lib/models"
 	"logistics-platform/lib/token"
+	"logistics-platform/lib/utils"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -33,25 +33,13 @@ func RegisterDriver(c *gin.Context) {
 }
 
 func GetDriverProfile(c *gin.Context) {
-	// authenticate user
-	headerAuthToken := c.GetHeader("Authorization")
-	if headerAuthToken == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing auth token"})
+	authUser, ok := c.Get("user")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized access"})
 		return
 	}
 
-	authToken := strings.TrimPrefix(headerAuthToken, "Bearer ")
-	if authToken == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid auth token"})
-		return
-	}
-
-	// validate token
-	user, err := token.GetUserFromToken(authToken)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid auth token"})
-		return
-	}
+	user := authUser.(utils.UserRequest)
 
 	driverID := c.Param("id")
 
@@ -67,7 +55,7 @@ func GetDriverProfile(c *gin.Context) {
 	)
 
 	var driver models.VehicleDriver
-	err = row.Scan(&driver.ID, &driver.Name, &driver.Email, &driver.VehicleType, &driver.VehicleVolume)
+	err := row.Scan(&driver.ID, &driver.Name, &driver.Email, &driver.VehicleType, &driver.VehicleVolume)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get driver", "message": err.Error()})
 		return

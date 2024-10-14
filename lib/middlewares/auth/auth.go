@@ -26,3 +26,29 @@ func AuthMiddleware() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+func AuthInjectionMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		headerAuthToken := c.GetHeader("Authorization")
+		if headerAuthToken == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing auth token"})
+			return
+		}
+
+		authToken := strings.TrimPrefix(headerAuthToken, "Bearer ")
+		if authToken == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid auth token"})
+			return
+		}
+
+		// validate token
+		user, err := token.GetUserFromToken(authToken)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid auth token"})
+			return
+		}
+
+		c.Set("user", user)
+		c.Next()
+	}
+}

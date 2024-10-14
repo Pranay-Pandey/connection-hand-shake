@@ -5,6 +5,7 @@ import (
 	"logistics-platform/lib/database"
 	"logistics-platform/lib/models"
 	"logistics-platform/lib/token"
+	"logistics-platform/lib/utils"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -61,23 +62,22 @@ func Login(c *gin.Context) {
 }
 
 func GetProfile(c *gin.Context) {
-	authHeader := c.GetHeader("Authorization")
-	tokenStr := authHeader[7:]
-
-	userFromToken, err := token.GetUserFromToken(tokenStr)
-	if err != nil {
+	authUser, ok := c.Get("user")
+	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
 		return
 	}
 
+	userReq := authUser.(utils.UserRequest)
+
 	row := database.PostgreSQLConn.QueryRow(
 		context.Background(),
 		"SELECT id, name, email FROM users WHERE id = $1",
-		userFromToken.UserID,
+		userReq.UserID,
 	)
 
 	var user models.User
-	err = row.Scan(&user.ID, &user.Name, &user.Email)
+	err := row.Scan(&user.ID, &user.Name, &user.Email)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user", "message": err.Error()})
 		return
