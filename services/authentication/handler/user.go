@@ -43,8 +43,6 @@ func Login(c *gin.Context) {
 		user.Email, user.Password,
 	)
 
-	println(user.Email, user.Password)
-
 	var u models.User
 	err := row.Scan(&u.ID, &u.Name, &u.Email)
 	if err != nil {
@@ -53,7 +51,7 @@ func Login(c *gin.Context) {
 	}
 
 	// Generate JWT token
-	token, err := token.GenerateToken(u.ID)
+	token, err := token.GenerateToken(u.ID, u.Name)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token", "message": err.Error()})
 		return
@@ -66,7 +64,7 @@ func GetProfile(c *gin.Context) {
 	authHeader := c.GetHeader("Authorization")
 	tokenStr := authHeader[7:]
 
-	userID, err := token.GetSubjectFromToken(tokenStr)
+	userFromToken, err := token.GetUserFromToken(tokenStr)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
 		return
@@ -75,7 +73,7 @@ func GetProfile(c *gin.Context) {
 	row := database.PostgreSQLConn.QueryRow(
 		context.Background(),
 		"SELECT id, name, email FROM users WHERE id = $1",
-		userID,
+		userFromToken.UserID,
 	)
 
 	var user models.User

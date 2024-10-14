@@ -68,7 +68,7 @@ func LoginDriver(c *gin.Context) {
 		return
 	}
 
-	token, err := token.GenerateToken(driver.ID)
+	token, err := token.GenerateToken(driver.ID, driver.Name)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token", "message": err.Error()})
 		return

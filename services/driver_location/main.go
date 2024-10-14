@@ -45,24 +45,18 @@ func (s *DriverLocationService) consumeDriverLocations() {
 			continue
 		}
 
-		log.Printf("Received message: %s", string(msg.Value))
-
 		var location utils.DriverLocation
 		if err := json.Unmarshal(msg.Value, &location); err != nil {
 			log.Printf("Error unmarshaling location update: %v", err)
 			continue
 		}
 
-		log.Printf("Updating driver location: %v", location)
-
 		if err := s.updateDriverLocation(location); err != nil {
 			log.Printf("Error updating driver location: %v", err)
 		}
-		log.Printf("Driver location updated successfully")
 	}
 }
 
-// set the driver location in Redis so that it can be used by the booking service later to find nearby drivers
 func (s *DriverLocationService) updateDriverLocation(location utils.DriverLocation) error {
 	err := s.redisClient.GeoAdd(context.Background(), "driver_locations", &redis.GeoLocation{
 		Name:      location.DriverID,

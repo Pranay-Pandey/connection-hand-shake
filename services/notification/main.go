@@ -127,6 +127,5 @@ func (s *NotificationService) sendNotification(notification utils.BookingNotific
 		return fmt.Errorf("driver %s not connected", notification.DriverID)
 	}
 
-	message := fmt.Sprintf("You have a new booking request from %s for $%.2f", notification.UserID, notification.Price)
-	return conn.(*websocket.Conn).WriteJSON(map[string]string{"message": message})
+	return conn.(*websocket.Conn).WriteJSON(notification)
 }

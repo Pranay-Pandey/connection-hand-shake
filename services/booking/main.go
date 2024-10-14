@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"logistics-platform/lib/token"
 	"net/http"
+	"strings"
 
 	"logistics-platform/lib/middlewares/cors"
 	"logistics-platform/lib/utils"
@@ -25,6 +27,7 @@ type BookingService struct {
 
 type BookingRequest struct {
 	UserID      string         `json:"user_id" bson:"user_id"`
+	UserName    string         `json:"user_name" bson:"user_name"`
 	Pickup      utils.GeoPoint `json:"pickup" bson:"pickup"`
 	Dropoff     utils.GeoPoint `json:"dropoff" bson:"dropoff"`
 	VehicleType string         `json:"vehicle_type" bson:"vehicle_type"`
@@ -81,6 +84,29 @@ func (s *BookingService) handleBookingRequest(c *gin.Context) {
 		return
 	}
 
+	// authenticate user
+	headerAuthToken := c.GetHeader("Authorization")
+	if headerAuthToken == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing auth token"})
+		return
+	}
+
+	authToken := strings.TrimPrefix(headerAuthToken, "Bearer ")
+	if authToken == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid auth token"})
+		return
+	}
+
+	// validate token
+	user, err := token.GetUserFromToken(authToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid auth token"})
+		return
+	}
+
+	bookingReq.UserID = user.UserID
+	bookingReq.UserName = user.UserName
+
 	if err := s.processBookingRequest(c.Request.Context(), bookingReq); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process booking request"})
 		return
@@ -133,6 +159,9 @@ func (s *BookingService) notifyDriver(driverID string, bookingReq BookingRequest
 		UserID:   bookingReq.UserID,
 		Price:    bookingReq.Price,
 		DriverID: driverID,
+		Pickup:   bookingReq.Pickup,
+		Dropoff:  bookingReq.Dropoff,
+		UserName: bookingReq.UserName,
 	}
 	notificationJSON, err := json.Marshal(notification)
 	if err != nil {

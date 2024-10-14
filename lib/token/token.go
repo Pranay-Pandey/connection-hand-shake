@@ -3,17 +3,20 @@ package token
 import (
 	"time"
 
+	"logistics-platform/lib/utils"
+
 	"github.com/dgrijalva/jwt-go"
 	"github.com/spf13/viper"
 )
 
 var jwtKey = []byte(viper.GetString("JWT_SECRET"))
 
-func GenerateToken(userID int32) (string, error) {
+func GenerateToken(userID int32, userName string) (string, error) {
 	expirationTime := time.Now().Add(72 * time.Hour)
 	claims := &jwt.StandardClaims{
 		ExpiresAt: expirationTime.Unix(),
-		Subject:   string(userID),
+		Id:        string(userID),
+		Subject:   userName,
 		Issuer:    "logistics-platform",
 	}
 
@@ -40,7 +43,7 @@ func ValidateToken(tokenString string) (bool, error) {
 	return token.Valid, nil
 }
 
-func GetSubjectFromToken(tokenString string) (string, error) {
+func GetUserFromToken(tokenString string) (utils.UserRequest, error) {
 	claims := &jwt.StandardClaims{}
 
 	_, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
@@ -48,8 +51,11 @@ func GetSubjectFromToken(tokenString string) (string, error) {
 	})
 
 	if err != nil {
-		return "", err
+		return utils.UserRequest{}, err
 	}
 
-	return claims.Subject, nil
+	return utils.UserRequest{
+		UserID:   claims.Id,
+		UserName: claims.Subject,
+	}, nil
 }

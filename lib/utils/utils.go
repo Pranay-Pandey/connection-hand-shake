@@ -29,9 +29,17 @@ type DriverLocation struct {
 }
 
 type BookingNotification struct {
-	UserID   string  `json:"user_id" bson:"user_id"`
-	DriverID string  `json:"driver_id" bson:"driver_id"`
-	Price    float64 `json:"price" bson:"price"`
+	UserID   string   `json:"user_id" bson:"user_id"`
+	DriverID string   `json:"driver_id" bson:"driver_id"`
+	Price    float64  `json:"price" bson:"price"`
+	Pickup   GeoPoint `json:"pickup" bson:"pickup"`
+	Dropoff  GeoPoint `json:"dropoff" bson:"dropoff"`
+	UserName string   `json:"user_name" bson:"user_name"` // Include user name if needed
+}
+
+type UserRequest struct {
+	UserID   string `json:"user_id" bson:"user_id"`
+	UserName string `json:"user_name" bson:"user_name"`
 }
 
 func InitRedis() (*redis.Client, error) {
