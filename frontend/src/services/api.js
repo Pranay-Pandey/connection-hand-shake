@@ -2,9 +2,9 @@
 // src/services/api.js
 import axios from 'axios'
 
-const AUTH_URL = 'http://localhost:8081' 
-const BOOKING_URL = 'http://localhost:8084'
-export const NOTIFICATION_URL = 'localhost:8080'
+const AUTH_URL = 'http://192.168.223.103:8081' 
+const BOOKING_URL = 'http://192.168.223.103:8084'
+export const NOTIFICATION_URL = '192.168.223.103:8080'
 
 const authApi = axios.create({
   baseURL: AUTH_URL,
@@ -47,3 +47,4 @@ export const getDriverProfile = (id) => authApi.get(`/driver/profile/${id}`)
 
 export const makeBooking = (bookingData) => bookingApi.post('/booking', bookingData)
 export const confirmBooking = (bookingId) => bookingApi.post(`/booking/accept`, bookingId)
+export const updateBookingStatus = (userId, bookingData) => bookingApi.patch(`/booking/${userId}`, bookingData)

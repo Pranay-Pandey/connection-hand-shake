@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import Navbar from '../components/Navbar';
 import { Button } from 'baseui/button';
+import { FormControl } from "baseui/form-control";
+import { Input } from "baseui/input";
 import { Card } from 'baseui/card';
 import { useStyletron } from 'baseui';
 import BookingNotification from '../components/BookingNotification'; // Import the custom notification component
-import { confirmBooking } from '../services/api';
+import { confirmBooking, updateBookingStatus } from '../services/api';
 
 const DriverdashBoard = () => {
   if (!localStorage.getItem('token') || localStorage.getItem('userType') !== 'driver') {
@@ -16,6 +18,9 @@ const DriverdashBoard = () => {
   const [ws, setWs] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [bookingRequest, setBookingRequest] = useState(null); // State to store booking request
+  const [journey, setJourney] = useState(false);
+  const [userId, setUserId] = useState(null);
+  const [journeyStatus, setJourneyStatus] = useState(false);
 
   const token = localStorage.getItem('token');
   const driverID = localStorage.getItem('driverID');
@@ -69,12 +74,18 @@ const DriverdashBoard = () => {
     };
   };
 
-  const handleConfirmBooking = () => {
+  const handleConfirmBooking = async () => {
     console.log('Booking confirmed');
     // Handle confirmation logic here
-    confirmBooking({
+    const response = await confirmBooking({
       "mongo_id" : bookingRequest.mongo_id
     })
+    if (response.status === 200) {
+      const data = response.data;
+      console.log('Booking confirmed successfully');
+      setJourney(true);
+      setUserId(data.user_id);
+    }
     setBookingRequest(null); // Hide notification after confirmation
   };
 
@@ -115,6 +126,38 @@ const DriverdashBoard = () => {
     }
   };
 
+  const resetJourney = () => {
+    setJourney(false);
+    setUserId(null);
+    setJourneyStatus(null);
+  };
+
+  const updateJourneyStatus = async () => {
+    if (!journeyStatus) {
+      console.error('Journey status is required');
+      return;
+    }
+    if (!userId) {
+      console.error('User ID is required');
+      return;
+    }
+    const data = {
+      status: journeyStatus,
+    };
+    try{
+      const response = updateBookingStatus(userId, data);
+      if (response.status === 404) {
+        resetJourney();
+      }
+    } catch (error) {
+      resetJourney();
+    }
+    if (data.status === 'completed') {
+      resetJourney();
+    }
+
+  };
+
   return (
     <div>
       <Navbar />
@@ -132,6 +175,29 @@ const DriverdashBoard = () => {
             Start Communication
           </Button>
         </Card>
+
+        { journey && userId && (
+          <Card overrides={{ Root: { style: { width: '400px', marginTop: '20px' } } }}>
+            <h3>Current Journey</h3>
+            <p>User ID: {userId}</p>
+
+            <FormControl
+              label="status"
+              caption="Please enter the status of the journey to update"
+            >
+              <Input
+                placeholder="Status"
+                value={journeyStatus}
+                onChange={(e) => setJourneyStatus(e.target.value)}
+              />
+            </FormControl>
+            <Button onClick={updateJourneyStatus}>
+              Update Journey Status
+            </Button>
+
+          </Card>
+          )}
+
         {bookingRequest && (
           <BookingNotification
             booking={bookingRequest}
