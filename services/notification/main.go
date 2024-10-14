@@ -23,9 +23,12 @@ var (
 )
 
 type NotificationService struct {
-	driverConnections  sync.Map
-	locationWriter     *kafka.Writer
-	notificationReader *kafka.Reader
+	driverConnections      sync.Map
+	userConnections        sync.Map
+	driverUserConnections  sync.Map
+	locationWriter         *kafka.Writer
+	notificationReader     *kafka.Reader
+	bookNotificationReader *kafka.Reader
 }
 
 func main() {
@@ -34,18 +37,21 @@ func main() {
 	}
 
 	service := &NotificationService{
-		locationWriter:     utils.InitKafkaWriter("driver_locations"),
-		notificationReader: utils.InitKafkaReader("driver_notification", "test-consumer-group"),
+		locationWriter:         utils.InitKafkaWriter("driver_locations"),
+		notificationReader:     utils.InitKafkaReader("driver_notification", "driver_notification"),
+		bookNotificationReader: utils.InitKafkaReader("booking_notifications", "booking_notification"),
 	}
 
 	router := gin.Default()
 	router.Use(cors.CORSMiddleware())
 	router.GET("/driver/ws", service.handleDriverWebSocket)
+	router.GET("/user/ws", service.handleUserWebSocket)
 	router.GET("/ping", func(c *gin.Context) {
 		c.String(http.StatusOK, "pong")
 	})
 
 	go service.consumeNotifications()
+	go service.consumeBookingNotifications()
 
 	server := &http.Server{
 		Addr:    ":8080",
@@ -123,8 +129,19 @@ func (s *NotificationService) sendLocationUpdate(location utils.DriverLocation) 
 		return fmt.Errorf("failed to marshal location: %w", err)
 	}
 
-	return s.locationWriter.WriteMessages(context.Background(),
+	err = s.locationWriter.WriteMessages(context.Background(),
 		kafka.Message{Value: message})
+
+	// if there is any driver user connection, send the notification to the user
+	userID, ok := s.driverUserConnections.Load(location.DriverID)
+	if ok {
+		conn, ok := s.userConnections.Load(userID.(string))
+		if ok {
+			err = conn.(*websocket.Conn).WriteJSON(location)
+		}
+	}
+
+	return err
 }
 
 func (s *NotificationService) consumeNotifications() {
@@ -154,4 +171,75 @@ func (s *NotificationService) sendNotification(notification utils.BookingNotific
 	}
 
 	return conn.(*websocket.Conn).WriteJSON(notification)
+}
+
+func (s *NotificationService) handleUserWebSocket(c *gin.Context) {
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		log.Printf("Failed to upgrade connection: %v", err)
+		return
+	}
+
+	defer conn.Close()
+
+	// Expect an initial message with the authentication token
+	var authMessage struct {
+		Token string `json:"token"`
+	}
+
+	if err := conn.ReadJSON(&authMessage); err != nil {
+		log.Printf("Failed to read auth message: %v", err)
+		conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "Authentication required"))
+		return
+	}
+
+	// Validate the token
+	user, err := token.GetUserFromToken(authMessage.Token) // Reuse token validation logic
+	if err != nil {
+		log.Printf("Invalid token: %v", err.Error())
+		conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "Invalid authentication token"))
+		return
+	}
+
+	userID := user.UserID
+	if userID == "" {
+		log.Println("User ID is required")
+		conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "User ID required"))
+		return
+	}
+
+	// Store the authenticated connection
+	s.userConnections.Store(userID, conn)
+	defer s.userConnections.Delete(userID)
+
+	// Proceed with WebSocket communication
+	for {
+		_, _, err := conn.ReadMessage()
+		if err != nil {
+			log.Printf("Error reading message: %v", err)
+			break
+		}
+	}
+}
+
+func (s *NotificationService) consumeBookingNotifications() {
+	for {
+		msg, err := s.bookNotificationReader.ReadMessage(context.Background())
+		if err != nil {
+			log.Printf("Error reading message: %v", err)
+			continue
+		}
+
+		var notification utils.BookedNotification
+		if err := json.Unmarshal(msg.Value, &notification); err != nil {
+			log.Printf("Error unmarshaling notification: %v", err)
+			continue
+		}
+
+		if notification.Status == "booked" {
+			s.driverUserConnections.Store(notification.DriverID, notification.UserID)
+		} else if notification.Status == "completed" {
+			s.driverUserConnections.Delete(notification.DriverID)
+		}
+	}
 }

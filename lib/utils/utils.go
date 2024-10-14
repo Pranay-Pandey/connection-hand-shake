@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v4"
 	"github.com/redis/go-redis/v9"
 	"github.com/segmentio/kafka-go"
 	"github.com/spf13/viper"
@@ -34,12 +35,28 @@ type BookingNotification struct {
 	Price    float64  `json:"price" bson:"price"`
 	Pickup   GeoPoint `json:"pickup" bson:"pickup"`
 	Dropoff  GeoPoint `json:"dropoff" bson:"dropoff"`
-	UserName string   `json:"user_name" bson:"user_name"` // Include user name if needed
+	UserName string   `json:"user_name" bson:"user_name"`
+	MongoID  string   `json:"mongo_id" bson:"mongo_id"`
+}
+
+type BookedNotification struct {
+	UserID   string `json:"user_id"`
+	DriverID string `json:"driver_id"`
+	Status   string `json:"status"`
 }
 
 type UserRequest struct {
 	UserID   string `json:"user_id" bson:"user_id"`
 	UserName string `json:"user_name" bson:"user_name"`
+}
+
+func InitPostgres() (*pgx.Conn, error) {
+	dsn := viper.GetString("POSTGRES_URL")
+	PostgreSQLConn, err := pgx.Connect(context.Background(), dsn)
+	if err != nil {
+		log.Fatalf("Unable to connect to PostgreSQL: %v\n", err)
+	}
+	return PostgreSQLConn, nil
 }
 
 func InitRedis() (*redis.Client, error) {
