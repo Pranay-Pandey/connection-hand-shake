@@ -18,17 +18,22 @@ export default function UserDashboard() {
   const [latitude, setLatitude] = useState(null);
   const [longitude, setLongitude] = useState(null);
 
-  // Automatically get the user's location
-  useEffect(() => {
+  const getUpdatedLocation = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition((position) => {
         setLatitude(position.coords.latitude);
         setLongitude(position.coords.longitude);
       });
     }
+  }
+
+  // Automatically get the user's location
+  useEffect(() => {
+    getUpdatedLocation();
   }, []);
 
   const bookRequest = async (e) => {
+    getUpdatedLocation();
     e.preventDefault();
     if (!vehicleType || !price) {
       alert("Please provide all the details.");
@@ -61,7 +66,7 @@ export default function UserDashboard() {
         alignItems: "center",
         flexDirection: "column",
         padding: "20px",
-        height: "100vh",
+        marginTop: "20px",
       })}>
         <HeadingLevel>
           <Heading>User Dashboard</Heading>

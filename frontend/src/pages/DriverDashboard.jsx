@@ -19,6 +19,19 @@ const DriverdashBoard = () => {
   const token = localStorage.getItem('token');
   const driverID = localStorage.getItem('driverID');
 
+  const getUpdatedLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition((position) => {
+        setLatitude(position.coords.latitude);
+        setLongitude(position.coords.longitude);
+      });
+    }
+  };
+
+  useEffect(() => {
+    getUpdatedLocation();
+  }, []);
+
   const startCommunication = () => {
     if (!driverID) {
       console.error('Driver ID is required');
@@ -79,8 +92,10 @@ const DriverdashBoard = () => {
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition((position) => {
           const loc = {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
+            location: {
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+            }, 
             driverID,
             timestamp: new Date().toISOString(),
           };
