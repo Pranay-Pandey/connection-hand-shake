@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"logistics-platform/lib/middlewares/cors"
+	"logistics-platform/lib/token"
 	"net/http"
 	"sync"
 
@@ -68,23 +69,48 @@ func (s *NotificationService) handleDriverWebSocket(c *gin.Context) {
 	}
 	defer conn.Close()
 
-	driverID := c.Query("driver_id")
-	if driverID == "" {
-		log.Println("Driver ID is required")
+	// Expect an initial message with the authentication token
+	var authMessage struct {
+		Token    string `json:"token"`
+		DriverID string `json:"driver_id"`
+	}
+
+	if err := conn.ReadJSON(&authMessage); err != nil {
+		log.Printf("Failed to read auth message: %v", err)
+		conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "Authentication required"))
 		return
 	}
 
+	// Validate the token
+	user, err := token.GetUserFromToken(authMessage.Token) // Reuse token validation logic
+	if err != nil {
+		log.Printf("Invalid token: %v", err.Error())
+		log.Printf("Token user ID: %s, Driver ID: %s", user.UserID, authMessage.DriverID)
+		conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "Invalid authentication token"))
+		return
+	}
+
+	driverID := user.UserID
+	if driverID == "" {
+		log.Println("Driver ID is required")
+		conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "Driver ID required"))
+		return
+	}
+
+	// Store the authenticated connection
 	s.driverConnections.Store(driverID, conn)
 	defer s.driverConnections.Delete(driverID)
 
+	// Proceed with WebSocket communication
 	for {
 		var location utils.DriverLocation
 		if err := conn.ReadJSON(&location); err != nil {
-			log.Printf("Error reading JSON: %v", err)
+			log.Printf("Error reading location JSON: %v", err)
 			break
 		}
 		location.DriverID = driverID
 
+		// Send the location update to Kafka
 		if err := s.sendLocationUpdate(location); err != nil {
 			log.Printf("Error sending location update: %v", err)
 		}
