@@ -107,22 +107,19 @@ func (s *BookingService) handleBookingRequest(c *gin.Context) {
 	bookingReq.UserID = user.UserID
 	bookingReq.UserName = user.UserName
 
-	if err := s.processBookingRequest(c.Request.Context(), bookingReq); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process booking request"})
-		return
-	}
+	go s.processBookingRequest(bookingReq)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Booking request received"})
 }
 
-func (s *BookingService) processBookingRequest(ctx context.Context, bookingReq BookingRequest) error {
+func (s *BookingService) processBookingRequest(bookingReq BookingRequest) error {
 	collection := s.mongoClient.Database("logistics").Collection("booking_requests")
-	_, err := collection.InsertOne(ctx, bookingReq)
+	_, err := collection.InsertOne(context.Background(), bookingReq)
 	if err != nil {
 		return fmt.Errorf("error storing booking request: %w", err)
 	}
 
-	nearbyDrivers, err := s.findNearbyDrivers(ctx, bookingReq.Pickup, bookingReq.VehicleType)
+	nearbyDrivers, err := s.findNearbyDrivers(bookingReq, bookingReq.VehicleType)
 	if err != nil {
 		return fmt.Errorf("error finding nearby drivers: %w", err)
 	}
@@ -138,8 +135,9 @@ func (s *BookingService) processBookingRequest(ctx context.Context, bookingReq B
 	return nil
 }
 
-func (s *BookingService) findNearbyDrivers(ctx context.Context, pickup utils.GeoPoint, vehicleType string) ([]string, error) {
-	drivers, err := s.redisClient.GeoRadius(ctx, "driver_locations", pickup.Longitude, pickup.Latitude, &redis.GeoRadiusQuery{
+func (s *BookingService) findNearbyDrivers(bookingReq BookingRequest, vehicleType string) ([]string, error) {
+	pickup := bookingReq.Pickup
+	drivers, err := s.redisClient.GeoRadius(context.Background(), "driver_locations", pickup.Longitude, pickup.Latitude, &redis.GeoRadiusQuery{
 		Radius: 100,
 		Unit:   "km",
 	}).Result()
@@ -149,7 +147,11 @@ func (s *BookingService) findNearbyDrivers(ctx context.Context, pickup utils.Geo
 
 	var nearbyDrivers []string
 	for _, driver := range drivers {
-		nearbyDrivers = append(nearbyDrivers, driver.Name)
+		go func(driverID string) {
+			if err := s.notifyDriver(driverID, bookingReq); err != nil {
+				log.Printf("Error notifying driver %s: %v", driverID, err)
+			}
+		}(driver.Name)
 	}
 	return nearbyDrivers, nil
 }
