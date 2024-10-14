@@ -17,6 +17,9 @@ export default function UserDashboard() {
   const [price, setPrice] = useState('');
   const [latitude, setLatitude] = useState(null);
   const [longitude, setLongitude] = useState(null);
+  const [ws, setWs] = useState(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const token = localStorage.getItem('token');
 
   const getUpdatedLocation = () => {
     if (navigator.geolocation) {
@@ -24,6 +27,30 @@ export default function UserDashboard() {
         setLatitude(position.coords.latitude);
         setLongitude(position.coords.longitude);
       });
+    }
+  }
+
+  const startSocketConnection = () => {
+    const socket = new WebSocket(`ws://localhost:8080/user/ws`);
+
+    socket.onopen = () => {
+      console.log('WebSocket connected');
+      setWs(socket);
+      setIsConnected(true);
+      socket.send(JSON.stringify({ token }));
+    };
+
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      console.log(data);
+    }
+
+    socket.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    }
+
+    socket.onclose = () => {
+      console.log('WebSocket disconnected');
     }
   }
 
@@ -52,6 +79,7 @@ export default function UserDashboard() {
         price: parseFloat(price)
       });
       console.log(response);
+      startSocketConnection();
     } catch (error) {
       console.error(error);
     }

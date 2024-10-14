@@ -4,6 +4,7 @@ import { Button } from 'baseui/button';
 import { Card } from 'baseui/card';
 import { useStyletron } from 'baseui';
 import BookingNotification from '../components/BookingNotification'; // Import the custom notification component
+import { confirmBooking } from '../services/api';
 
 const DriverdashBoard = () => {
   if (!localStorage.getItem('token') || localStorage.getItem('userType') !== 'driver') {
@@ -49,6 +50,7 @@ const DriverdashBoard = () => {
     socket.onmessage = (event) => {
       const data = JSON.parse(event.data);
       // Set the booking request data to show the notification
+      console.log('Received booking request:', data);
       setBookingRequest(data);
     };
 
@@ -69,7 +71,10 @@ const DriverdashBoard = () => {
 
   const handleConfirmBooking = () => {
     console.log('Booking confirmed');
-    // Handle confirmation logic here, e.g., send confirmation to server
+    // Handle confirmation logic here
+    confirmBooking({
+      "mongo_id" : bookingRequest.mongo_id
+    })
     setBookingRequest(null); // Hide notification after confirmation
   };
 

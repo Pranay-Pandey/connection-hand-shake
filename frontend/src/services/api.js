@@ -46,3 +46,4 @@ export const loginDriver = (credentials) => authApi.post('/driver/login', creden
 export const getDriverProfile = (id) => authApi.get(`/driver/profile/${id}`)
 
 export const makeBooking = (bookingData) => bookingApi.post('/booking', bookingData)
+export const confirmBooking = (bookingId) => bookingApi.post(`/booking/accept`, bookingId)
