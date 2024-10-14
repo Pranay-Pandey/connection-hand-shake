@@ -22,6 +22,7 @@ export default [
       react,
       'react-hooks': reactHooks,
       'react-refresh': reactRefresh,
+      'baseui': 'baseui',
     },
     rules: {
       ...js.configs.recommended.rules,
@@ -33,6 +34,9 @@ export default [
         'warn',
         { allowConstantExport: true },
       ],
+      'baseui/deprecated-theme-api': "warn",
+      'baseui/deprecated-component-api': "warn",
+      'baseui/no-deep-imports': "warn",
     },
   },
 ]
