@@ -95,6 +95,7 @@ func main() {
 	{
 		router.POST("/booking/accept", service.handleBookingAccept)
 		router.POST("/booking", service.handleBookingRequest)
+		router.PATCH("/booking/:userId", service.handleBookingUpdate)
 	}
 
 	server := &http.Server{
@@ -109,6 +110,44 @@ func main() {
 	}()
 
 	utils.WaitForShutdown(server, service.notificationWriter, redisClient)
+}
+
+func (s *BookingService) handleBookingUpdate(c *gin.Context) {
+	authDriver, ok := c.Get("user")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid auth token"})
+		return
+	}
+
+	driver, ok := authDriver.(utils.UserRequest)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid auth token"})
+		return
+	}
+
+	userID := c.Param("userId")
+	var booking Booking
+	if err := c.ShouldBindJSON(&booking); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	pgComm, err := s.PostgreSQLConn.Exec(context.Background(), "UPDATE booking SET status = $1 WHERE user_id = $2 AND driver_id = $3 AND status != $4", booking.Status, userID, driver.UserID, "completed")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "error updating booking"})
+		return
+	}
+
+	if pgComm.RowsAffected() == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "booking not found"})
+		return
+	}
+
+	if booking.Status == "completed" {
+		go s.produceBookingEvent(userID, driver.UserID, "completed")
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Booking updated"})
 }
 
 func (s *BookingService) handleBookingAccept(c *gin.Context) {
@@ -151,9 +190,13 @@ func (s *BookingService) handleBookingAccept(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "error deleting booking request"})
 		return
 	}
-	go s.processBooked(bookConReq)
+	err = s.processBooked(bookConReq)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Booking accepted"})
+	c.JSON(http.StatusOK, gin.H{"message": "Booking accepted", "user_id": bookConReq.BookingReq.UserID})
 }
 
 func (s *BookingService) processBooked(bookConReq BookingConfirmation) error {
@@ -165,7 +208,7 @@ func (s *BookingService) processBooked(bookConReq BookingConfirmation) error {
 		return fmt.Errorf("error storing booking: %w", err)
 	}
 
-	s.produceBookingEvent(bookingReq.UserID, bookConReq.DriverID, "booked")
+	go s.produceBookingEvent(bookingReq.UserID, bookConReq.DriverID, "booked")
 	return nil
 }
 
