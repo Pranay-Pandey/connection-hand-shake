@@ -5,8 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-
 	"logistics-platform/lib/utils"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/segmentio/kafka-go"
@@ -63,6 +63,14 @@ func (s *DriverLocationService) updateDriverLocation(location utils.DriverLocati
 		Longitude: location.Location.Longitude,
 		Latitude:  location.Location.Latitude,
 	}).Err()
+
+	if err != nil {
+		return err
+	}
+
+	// Set expiration time for the driver's location to 5 minutes
+	expiration := 5 * time.Minute
+	_, err = s.redisClient.Expire(context.Background(), "driver_locations:"+location.DriverID, expiration).Result()
 
 	return err
 }
