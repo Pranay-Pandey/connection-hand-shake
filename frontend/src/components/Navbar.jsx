@@ -22,8 +22,6 @@ export default function Navbar(){
 
     return (
     <div className={css({
-        position: "sticky",
-        top: 0,
         zIndex: 100,
         width: "100vw",
       })}>
