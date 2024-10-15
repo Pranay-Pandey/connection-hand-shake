@@ -23,6 +23,7 @@ func main() {
 	// Register user routes
 	routers.RegisterUserRoutes(router)
 	routers.RegisterDriverRoutes(router)
+	routers.RegisterAdminRoutes(router)
 
 	// Run the user service on a specific port
 	router.Run(":8081")

@@ -32,3 +32,10 @@ func RegisterDriverRoutes(router *gin.Engine) {
 		}
 	}
 }
+
+func RegisterAdminRoutes(router *gin.Engine) {
+	admin := router.Group("/admin")
+	{
+		admin.POST("/login", handler.AdminLogin)
+	}
+}

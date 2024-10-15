@@ -121,3 +121,7 @@ func LoadConfig() error {
 	viper.SetConfigFile(".env")
 	return viper.ReadInConfig()
 }
+
+func GetDBConnectionString() string {
+	return viper.GetString("POSTGRES_URL")
+}
