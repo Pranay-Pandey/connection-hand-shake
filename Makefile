@@ -2,8 +2,9 @@ dev-run-all:
 	go run services/authentication/main.go & \
 	go run services/booking/main.go & \
 	go run services/notification/main.go & \
-	go run services/driver_location/main.go
-
+	go run services/driver_location/main.go & \
+	go run services/pricing/main.go & \
+	go run services/admin/main.go
 
 dev-run-frontend:
 	cd frontend && npm run dev
@@ -22,3 +23,6 @@ run-notification:
 
 run-driver-location:
 	go run services/driver_location/main.go
+
+run-pricing:
+	go run services/pricing/main.go
