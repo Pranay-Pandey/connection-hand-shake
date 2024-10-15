@@ -5,7 +5,7 @@ import { Button } from "baseui/button";
 import { Heading, HeadingLevel } from "baseui/heading";
 import { useStyletron } from "baseui";
 import Navbar from "../components/Navbar";
-import { makeBooking } from "../services/api";
+import { makeBooking, getPrice } from "../services/api";
 import { Select, TYPE } from "baseui/select";
 import _ from "lodash";
 import axios from "axios";
@@ -15,8 +15,6 @@ export default function UserDashboard() {
   const [css] = useStyletron();
   const [vehicleType, setVehicleType] = useState('');
   const [price, setPrice] = useState('');
-  const [latitude, setLatitude] = useState(null);
-  const [longitude, setLongitude] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [pickupOptions, setPickupOptions] = useState([]);
   const [dropoffOptions, setDropoffOptions] = useState([]);
@@ -27,6 +25,7 @@ export default function UserDashboard() {
     longitude: null,
   });
   const [showMap, setShowMap] = useState(false);
+  const [loadingPrice, setLoadingPrice] = useState(false);
 
   const debouncedFetchPickup = useCallback(_.debounce((query) => fetchLocations(query, setPickupOptions), 500), []);
   const debouncedFetchDropoff = useCallback(_.debounce((query) => fetchLocations(query, setDropoffOptions), 500), []);
@@ -43,15 +42,6 @@ export default function UserDashboard() {
       setOptions(options);
     } catch (error) {
       console.error("Error fetching locations:", error);
-    }
-  };
-
-  const getUpdatedLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition((position) => {
-        setLatitude(position.coords.latitude);
-        setLongitude(position.coords.longitude);
-      });
     }
   };
 
@@ -72,13 +62,37 @@ export default function UserDashboard() {
     };
   };
 
-  useEffect(() => {
-    getUpdatedLocation();
-  }, []);
+  const fetchPrice = async () => {
+    if (!vehicleType || !pickup.length || !dropoff.length) {
+      alert("Please provide all details to fetch the price.");
+      return;
+    }
+
+    setLoadingPrice(true);
+
+    try {
+      const response = await getPrice({
+        vehicle_type: vehicleType,
+        pickup: {
+          "latitude": parseFloat(pickup[0].latitude),
+          "longitude": parseFloat(pickup[0].longitude),
+        },
+        dropoff: {
+          "latitude": parseFloat(dropoff[0].latitude),
+          "longitude": parseFloat(dropoff[0].longitude),
+        }
+      });
+      setPrice(response.data.price.toFixed(2));
+    } catch (error) {
+      console.error(error);
+      alert("Error fetching price. Please try again.");
+    } finally {
+      setLoadingPrice(false);
+    }
+  };
 
   const bookRequest = async (e) => {
     e.preventDefault();
-    getUpdatedLocation();
     if (!vehicleType || !price || !pickup.length || !dropoff.length) {
       alert("Please provide all the details.");
       return;
@@ -136,7 +150,7 @@ export default function UserDashboard() {
             overflow: "hidden",
           })}>
             <TrackingMap lat={driverLocation.latitude} lon={driverLocation.longitude} 
-            finalLat={dropoff[0].latitude} finalLon={dropoff[0].longitude}
+              finalLat={dropoff[0].latitude} finalLon={dropoff[0].longitude}
             />
           </div>
         ) : (
@@ -155,15 +169,6 @@ export default function UserDashboard() {
                   value={vehicleType}
                   onChange={(e) => setVehicleType(e.target.value)}
                   placeholder="Enter vehicle type"
-                />
-              </FormControl>
-
-              <FormControl label="Price">
-                <Input
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  placeholder="Enter price"
-                  type="number"
                 />
               </FormControl>
 
@@ -194,6 +199,39 @@ export default function UserDashboard() {
                   value={dropoff}
                 />
               </FormControl>
+
+              <div className={css({
+                textAlign: 'center',
+                marginTop: '20px',
+              })}>
+                <Button
+                  type="button"
+                  onClick={fetchPrice}
+                  isLoading={loadingPrice}
+                  overrides={{
+                    BaseButton: {
+                      style: {
+                        width: "100%",
+                        backgroundColor: "#1abc9c",
+                        color: "#fff",
+                      },
+                    },
+                  }}
+                >
+                  {loadingPrice ? "Fetching Price..." : "Get Price"}
+                </Button>
+              </div>
+
+              {price && (
+                <div className={css({
+                  marginTop: "20px",
+                  textAlign: "center",
+                  color: "#27ae60",
+                  fontSize: "1.5rem",
+                })}>
+                  Estimated Price: ${price}
+                </div>
+              )}
 
               <div className={css({
                 textAlign: 'center',
