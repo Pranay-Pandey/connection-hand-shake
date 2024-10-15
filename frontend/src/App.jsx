@@ -8,6 +8,7 @@ import DriverRegister from './pages/DriverRegister'
 import DriverLogin from './pages/DriverLogin'
 import DriverDashboard from './pages/DriverDashboard'
 import Home from './pages/Home'
+import AdminDashboard from './pages/AdminDashboard'
 
 function App() {
   return (
@@ -24,6 +25,8 @@ function App() {
       <Route path="/driver/dashboard" element={
           <DriverDashboard />
       } />
+
+      <Route path="/admin/dashboard" element={<AdminDashboard />} />
 
       <Route path="/" element={<Home />} />
     </Routes>
