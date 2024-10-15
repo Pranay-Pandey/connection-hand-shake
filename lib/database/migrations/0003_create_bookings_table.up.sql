@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS booking (
     id SERIAL PRIMARY KEY,
-    user_id VARCHAR(255) NOT NULL,
-    driver_id VARCHAR(255) NOT NULL,
+    user_id INTEGER NOT NULL,
+    driver_id INTEGER NOT NULL,
     pickup_latitude FLOAT NOT NULL,
     pickup_longitude FLOAT NOT NULL,
     dropoff_latitude FLOAT NOT NULL,
