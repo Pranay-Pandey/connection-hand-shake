@@ -41,8 +41,8 @@ type BookingRequest struct {
 
 type Booking struct {
 	ID          int32          `json:"id"`
-	UserID      string         `json:"user_id"`
-	DriverID    string         `json:"driver_id"`
+	UserID      int32          `json:"user_id"`
+	DriverID    int32          `json:"driver_id"`
 	Price       string         `json:"price"`
 	Pickup      utils.GeoPoint `json:"pickup"`
 	Dropoff     utils.GeoPoint `json:"dropoff"`
