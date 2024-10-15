@@ -26,6 +26,13 @@ export default function UserDashboard() {
   });
   const [showMap, setShowMap] = useState(false);
   const [loadingPrice, setLoadingPrice] = useState(false);
+  const [vehicleOptions, setVehicleOptions] = useState([
+    { id: "Light Truck", value: "light_truck" },
+    { id: "Van", value: "van" },
+    { id: "Truck", value: "truck" },
+    { id: "Heavy Truck", value: "heavy_truck" },
+    { id: "Trailer", value: "trailer" },
+  ]);
 
   const debouncedFetchPickup = useCallback(_.debounce((query) => fetchLocations(query, setPickupOptions), 500), []);
   const debouncedFetchDropoff = useCallback(_.debounce((query) => fetchLocations(query, setDropoffOptions), 500), []);
@@ -110,7 +117,9 @@ export default function UserDashboard() {
         vehicle_type: vehicleType,
         price: parseFloat(price),
       });
-      startSocketConnection();
+      if (response.status === 200) {
+        startSocketConnection();
+      }
     } catch (error) {
       console.error(error);
     }
@@ -165,10 +174,15 @@ export default function UserDashboard() {
           })}>
             <form onSubmit={bookRequest}>
               <FormControl label="Vehicle Type">
-                <Input
-                  value={vehicleType}
-                  onChange={(e) => setVehicleType(e.target.value)}
-                  placeholder="Enter vehicle type"
+                <Select
+                  options={vehicleOptions}
+                  labelKey="id"
+                  valueKey="value"
+                  placeholder="Select vehicle type"
+                  maxDropdownHeight="300px"
+                  type={TYPE.search}
+                  onChange={({ value }) => setVehicleType(value[0]?.value || '')}
+                  value={vehicleOptions.filter((option) => option.value === vehicleType)}
                 />
               </FormControl>
 

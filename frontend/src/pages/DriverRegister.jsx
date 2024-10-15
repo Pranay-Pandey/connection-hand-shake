@@ -4,6 +4,7 @@ import { Input } from "baseui/input";
 import { Button } from "baseui/button";
 import {Heading, HeadingLevel} from 'baseui/heading';
 import { registerDriver } from "../services/api";
+import { Select, TYPE } from "baseui/select";
 import { StyledLink } from "baseui/link";
 import { useStyletron } from "baseui";
 
@@ -14,10 +15,21 @@ export default function UserRegister() {
   const [vehicleId, setVehicleId] = useState("");
   const [vehilceType, setVehicleType] = useState("");
   const [vehicleVolumen, setVehicleVolumen] = useState("");
+  const [vehicleOptions, setVehicleOptions] = useState([
+    { id: "Light Truck", value: "light_truck" },
+    { id: "Van", value: "van" },
+    { id: "Truck", value: "truck" },
+    { id: "Heavy Truck", value: "heavy_truck" },
+    { id: "Trailer", value: "trailer" },
+  ]);
   const [css] = useStyletron();
 
   const register = async () => {
     try {
+      if (!name || !email || !password || !vehicleId || !vehilceType || !vehicleVolumen) {
+        alert('Please fill out all fields');
+        return;
+      }
       const response = await registerDriver({ name, email, password, vehicleId, vehilceType, vehicleVolumen });
       if (response.status === 200) {
         console.log(response.data);
@@ -79,10 +91,13 @@ export default function UserRegister() {
       label="Vehicle Type"
       caption="Please enter your vehicle type"
     >
-      <Input
-        value={vehilceType}
-        onChange={(e) => setVehicleType(e.target.value)}
-        placeholder="Vehicle Type"
+      <Select
+        options={vehicleOptions}
+        labelKey="id"
+        valueKey="value"
+        type={TYPE.search}
+        onChange={({ value }) => setVehicleType(value[0]?.value || '')}
+        value={vehicleOptions.filter((option) => option.value === vehilceType)}
       />
     </FormControl>
     <FormControl
