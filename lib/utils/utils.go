@@ -50,6 +50,16 @@ type UserRequest struct {
 	UserName string `json:"user_name" bson:"user_name"`
 }
 
+type BookingRequest struct {
+	UserID      string   `json:"user_id" bson:"user_id"`
+	UserName    string   `json:"user_name" bson:"user_name"`
+	Pickup      GeoPoint `json:"pickup" bson:"pickup"`
+	Dropoff     GeoPoint `json:"dropoff" bson:"dropoff"`
+	VehicleType string   `json:"vehicle_type" bson:"vehicle_type"`
+	Price       float64  `json:"price" bson:"price"`
+	MongoID     string   `json:"mongo_id" bson:"mongo_id"`
+}
+
 func InitPostgres() (*pgx.Conn, error) {
 	dsn := viper.GetString("POSTGRES_URL")
 	PostgreSQLConn, err := pgx.Connect(context.Background(), dsn)

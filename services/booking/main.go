@@ -29,16 +29,6 @@ type BookingService struct {
 	PostgreSQLConn     *pgx.Conn
 }
 
-type BookingRequest struct {
-	UserID      string         `json:"user_id" bson:"user_id"`
-	UserName    string         `json:"user_name" bson:"user_name"`
-	Pickup      utils.GeoPoint `json:"pickup" bson:"pickup"`
-	Dropoff     utils.GeoPoint `json:"dropoff" bson:"dropoff"`
-	VehicleType string         `json:"vehicle_type" bson:"vehicle_type"`
-	Price       float64        `json:"price" bson:"price"`
-	MongoID     string         `json:"mongo_id" bson:"mongo_id"`
-}
-
 type Booking struct {
 	ID          int32          `json:"id"`
 	UserID      int32          `json:"user_id"`
@@ -52,8 +42,8 @@ type Booking struct {
 }
 
 type BookingConfirmation struct {
-	BookingReq BookingRequest `json:"booking_request"`
-	DriverID   string         `json:"driver_id"`
+	BookingReq utils.BookingRequest `json:"booking_request"`
+	DriverID   string               `json:"driver_id"`
 }
 
 func main() {
@@ -245,7 +235,7 @@ func (s *BookingService) produceBookingEvent(userID, driverID, status string) {
 }
 
 func (s *BookingService) handleBookingRequest(c *gin.Context) {
-	var bookingReq BookingRequest
+	var bookingReq utils.BookingRequest
 	if err := c.ShouldBindJSON(&bookingReq); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -267,7 +257,7 @@ func (s *BookingService) handleBookingRequest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Booking request received"})
 }
 
-func (s *BookingService) processBookingRequest(bookingReq BookingRequest) error {
+func (s *BookingService) processBookingRequest(bookingReq utils.BookingRequest) error {
 	collection := s.mongoClient.Database("logistics").Collection("booking_requests")
 	res, err := collection.InsertOne(context.Background(), bookingReq)
 	if err != nil {
@@ -293,7 +283,7 @@ func (s *BookingService) processBookingRequest(bookingReq BookingRequest) error 
 	return nil
 }
 
-func (s *BookingService) findNearbyDrivers(bookingReq BookingRequest, vehicleType string) ([]string, error) {
+func (s *BookingService) findNearbyDrivers(bookingReq utils.BookingRequest, vehicleType string) ([]string, error) {
 	pickup := bookingReq.Pickup
 	drivers, err := s.redisClient.GeoRadius(context.Background(), "driver_locations", pickup.Longitude, pickup.Latitude, &redis.GeoRadiusQuery{
 		Radius: 1000,
@@ -314,7 +304,7 @@ func (s *BookingService) findNearbyDrivers(bookingReq BookingRequest, vehicleTyp
 	return nearbyDrivers, nil
 }
 
-func (s *BookingService) notifyDriver(driverID string, bookingReq BookingRequest) error {
+func (s *BookingService) notifyDriver(driverID string, bookingReq utils.BookingRequest) error {
 	notification := utils.BookingNotification{
 		UserID:   bookingReq.UserID,
 		Price:    bookingReq.Price,
