@@ -8,6 +8,9 @@ dev-run-all:
 dev-run-frontend:
 	cd frontend && npm run dev
 
+run-admin:
+	go run services/admin/main.go
+
 run-auth:
 	go run services/authentication/main.go
 
