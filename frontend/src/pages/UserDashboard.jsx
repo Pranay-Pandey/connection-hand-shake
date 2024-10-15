@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { FormControl } from "baseui/form-control";
 import { Input } from "baseui/input";
 import { Button } from "baseui/button";
@@ -6,20 +6,45 @@ import { Heading, HeadingLevel } from "baseui/heading";
 import { useStyletron } from "baseui";
 import Navbar from "../components/Navbar";
 import { makeBooking } from "../services/api";
+import { Select, TYPE } from "baseui/select";
+import _ from "lodash";
+import axios from "axios";
+import TrackingMap from "../components/TrackingMap";
 
 export default function UserDashboard() {
-  if (!localStorage.getItem('token') || localStorage.getItem('userType') !== 'user') {
-    window.location.href = '/user/login';
-  }
-  
   const [css] = useStyletron();
   const [vehicleType, setVehicleType] = useState('');
   const [price, setPrice] = useState('');
   const [latitude, setLatitude] = useState(null);
   const [longitude, setLongitude] = useState(null);
-  const [ws, setWs] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
-  const token = localStorage.getItem('token');
+  const [pickupOptions, setPickupOptions] = useState([]);
+  const [dropoffOptions, setDropoffOptions] = useState([]);
+  const [pickup, setPickup] = useState([]);
+  const [dropoff, setDropoff] = useState([]);
+  const [driverLocation, setDriverLocation] = useState({
+    latitude: null,
+    longitude: null,
+  });
+  const [showMap, setShowMap] = useState(false);
+
+  const debouncedFetchPickup = useCallback(_.debounce((query) => fetchLocations(query, setPickupOptions), 500), []);
+  const debouncedFetchDropoff = useCallback(_.debounce((query) => fetchLocations(query, setDropoffOptions), 500), []);
+
+  const fetchLocations = async (query, setOptions) => {
+    if (query.length < 3) return;
+    try {
+      const response = await axios.get(`https://nominatim.openstreetmap.org/search?q=${query}&format=json&addressdetails=1&limit=5`);
+      const options = response.data.map((location) => ({
+        id: location.display_name,
+        latitude: location.lat,
+        longitude: location.lon,
+      }));
+      setOptions(options);
+    } catch (error) {
+      console.error("Error fetching locations:", error);
+    }
+  };
 
   const getUpdatedLocation = () => {
     if (navigator.geolocation) {
@@ -28,57 +53,49 @@ export default function UserDashboard() {
         setLongitude(position.coords.longitude);
       });
     }
-  }
+  };
 
   const startSocketConnection = () => {
     const socket = new WebSocket(`ws://localhost:8080/user/ws`);
-
     socket.onopen = () => {
-      console.log('WebSocket connected');
-      setWs(socket);
       setIsConnected(true);
-      socket.send(JSON.stringify({ token }));
+      socket.send(JSON.stringify({ token: localStorage.getItem('token') }));
     };
-
     socket.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      console.log(data);
-    }
+      setDriverLocation({
+        latitude: data.location.latitude,
+        longitude: data.location.longitude,
+      });
+      if (!showMap)
+        setShowMap(true); // Switch to map view once the booking is accepted
+    };
+  };
 
-    socket.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    }
-
-    socket.onclose = () => {
-      console.log('WebSocket disconnected');
-    }
-  }
-
-  // Automatically get the user's location
   useEffect(() => {
     getUpdatedLocation();
   }, []);
 
   const bookRequest = async (e) => {
-    getUpdatedLocation();
     e.preventDefault();
-    if (!vehicleType || !price) {
+    getUpdatedLocation();
+    if (!vehicleType || !price || !pickup.length || !dropoff.length) {
       alert("Please provide all the details.");
-      return;
-    }
-
-    if (!latitude || !longitude) {
-      alert("Could not get your location. Please enable location services.");
       return;
     }
     try {
       const response = await makeBooking({
-        pickup: { latitude, longitude },
-        dropoff: { latitude, longitude }, // Can replace with actual dropoff data
+        pickup: {
+          latitude: parseFloat(pickup[0].latitude),
+          longitude: parseFloat(pickup[0].longitude),
+        },
+        dropoff: {
+          latitude: parseFloat(dropoff[0].latitude),
+          longitude: parseFloat(dropoff[0].longitude),
+        },
         vehicle_type: vehicleType,
-        price: parseFloat(price)
+        price: parseFloat(price),
       });
-      console.log(response);
       startSocketConnection();
     } catch (error) {
       console.error(error);
@@ -95,42 +112,108 @@ export default function UserDashboard() {
         flexDirection: "column",
         padding: "20px",
         marginTop: "20px",
+        background: "linear-gradient(135deg, #f0f4f8, #c8d6e5)",
+        minHeight: "100vh",
       })}>
         <HeadingLevel>
-          <Heading>User Dashboard</Heading>
+          <Heading className={css({
+            fontSize: "2rem",
+            color: "#2c3e50",
+            textAlign: "center",
+          })}>
+            User Dashboard
+          </Heading>
         </HeadingLevel>
 
-        <div className={css({
-          backgroundColor: "#f0f4f8",
-          padding: "20px",
-          borderRadius: "10px",
-          boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)",
-          width: "100%",
-          maxWidth: "400px",
-        })}>
-          <form onSubmit={bookRequest}>
-            <FormControl label="Vehicle Type">
-              <Input
-                value={vehicleType}
-                onChange={(e) => setVehicleType(e.target.value)}
-                placeholder="Enter vehicle type"
-              />
-            </FormControl>
+        {showMap ? (
+          <div className={css({
+            width: "100%",
+            maxWidth: "600px",
+            height: "400px",
+            margin: "20px 0",
+            boxShadow: "0 6px 12px rgba(0,0,0,0.1)",
+            borderRadius: "10px",
+            overflow: "hidden",
+          })}>
+            <TrackingMap lat={driverLocation.latitude} lon={driverLocation.longitude} 
+            finalLat={dropoff[0].latitude} finalLon={dropoff[0].longitude}
+            />
+          </div>
+        ) : (
+          <div className={css({
+            backgroundColor: "#fff",
+            padding: "20px",
+            borderRadius: "10px",
+            boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)",
+            width: "100%",
+            maxWidth: "400px",
+            transition: "all 0.3s ease-in-out",
+          })}>
+            <form onSubmit={bookRequest}>
+              <FormControl label="Vehicle Type">
+                <Input
+                  value={vehicleType}
+                  onChange={(e) => setVehicleType(e.target.value)}
+                  placeholder="Enter vehicle type"
+                />
+              </FormControl>
 
-            <FormControl label="Price">
-              <Input
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                placeholder="Enter price"
-                type="number"
-              />
-            </FormControl>
+              <FormControl label="Price">
+                <Input
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  placeholder="Enter price"
+                  type="number"
+                />
+              </FormControl>
 
-            <div className={css({ textAlign: 'center', marginTop: '20px' })}>
-              <Button type="submit">Make a Booking</Button>
-            </div>
-          </form>
-        </div>
+              <FormControl label="Pickup Location">
+                <Select
+                  options={pickupOptions}
+                  labelKey="id"
+                  valueKey="id"
+                  placeholder="Search pickup location"
+                  maxDropdownHeight="300px"
+                  type={TYPE.search}
+                  onInputChange={(e) => debouncedFetchPickup(e.target.value)}
+                  onChange={({ value }) => setPickup(value)}
+                  value={pickup}
+                />
+              </FormControl>
+
+              <FormControl label="Dropoff Location">
+                <Select
+                  options={dropoffOptions}
+                  labelKey="id"
+                  valueKey="id"
+                  placeholder="Search dropoff location"
+                  maxDropdownHeight="300px"
+                  type={TYPE.search}
+                  onInputChange={(e) => debouncedFetchDropoff(e.target.value)}
+                  onChange={({ value }) => setDropoff(value)}
+                  value={dropoff}
+                />
+              </FormControl>
+
+              <div className={css({
+                textAlign: 'center',
+                marginTop: '20px',
+              })}>
+                <Button type="submit" overrides={{
+                  BaseButton: {
+                    style: {
+                      width: "100%",
+                      backgroundColor: "#1abc9c",
+                      color: "#fff",
+                    },
+                  },
+                }}>
+                  Make a Booking
+                </Button>
+              </div>
+            </form>
+          </div>
+        )}
       </div>
     </div>
   );

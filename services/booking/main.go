@@ -132,18 +132,31 @@ func (s *BookingService) handleBookingUpdate(c *gin.Context) {
 		return
 	}
 
-	pgComm, err := s.PostgreSQLConn.Exec(context.Background(), "UPDATE booking SET status = $1 WHERE user_id = $2 AND driver_id = $3 AND status != $4", booking.Status, userID, driver.UserID, "completed")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "error updating booking"})
-		return
+	if booking.Status == "completed" || booking.Status == "cancelled" {
+		pgComm, err := s.PostgreSQLConn.Exec(context.Background(), "UPDATE booking SET status = $1, completed_at = NOW() WHERE user_id = $2 AND driver_id = $3 AND status != $4", booking.Status, userID, driver.UserID, "completed")
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "error updating booking"})
+			return
+		}
+
+		if pgComm.RowsAffected() == 0 {
+			c.JSON(http.StatusNotFound, gin.H{"error": "booking not found"})
+			return
+		}
+	} else {
+		pgComm, err := s.PostgreSQLConn.Exec(context.Background(), "UPDATE booking SET status = $1 WHERE user_id = $2 AND driver_id = $3 AND status != $4", booking.Status, userID, driver.UserID, "completed")
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "error updating booking"})
+			return
+		}
+
+		if pgComm.RowsAffected() == 0 {
+			c.JSON(http.StatusNotFound, gin.H{"error": "booking not found"})
+			return
+		}
 	}
 
-	if pgComm.RowsAffected() == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "booking not found"})
-		return
-	}
-
-	if booking.Status == "completed" {
+	if booking.Status == "completed" || booking.Status == "cancelled" {
 		go s.produceBookingEvent(userID, driver.UserID, "completed")
 	}
 
@@ -283,7 +296,7 @@ func (s *BookingService) processBookingRequest(bookingReq BookingRequest) error 
 func (s *BookingService) findNearbyDrivers(bookingReq BookingRequest, vehicleType string) ([]string, error) {
 	pickup := bookingReq.Pickup
 	drivers, err := s.redisClient.GeoRadius(context.Background(), "driver_locations", pickup.Longitude, pickup.Latitude, &redis.GeoRadiusQuery{
-		Radius: 100,
+		Radius: 1000,
 		Unit:   "km",
 	}).Result()
 	if err != nil {

@@ -5,37 +5,32 @@ import { FormControl } from "baseui/form-control";
 import { Input } from "baseui/input";
 import { Card } from 'baseui/card';
 import { useStyletron } from 'baseui';
-import BookingNotification from '../components/BookingNotification'; // Import the custom notification component
+import BookingNotification from '../components/BookingNotification'; 
 import { confirmBooking, updateBookingStatus } from '../services/api';
 
 const DriverdashBoard = () => {
-  if (!localStorage.getItem('token') || localStorage.getItem('userType') !== 'driver') {
-    window.location.href = '/driver/login';
-  }
-
   const [css] = useStyletron();
   const [location, setLocation] = useState(null);
   const [ws, setWs] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
-  const [bookingRequest, setBookingRequest] = useState(null); // State to store booking request
+  const [bookingRequest, setBookingRequest] = useState(null);
   const [journey, setJourney] = useState(false);
   const [userId, setUserId] = useState(null);
-  const [journeyStatus, setJourneyStatus] = useState(false);
+  const [journeyStatus, setJourneyStatus] = useState("");
 
   const token = localStorage.getItem('token');
   const driverID = localStorage.getItem('driverID');
 
-  const getUpdatedLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition((position) => {
-        setLatitude(position.coords.latitude);
-        setLongitude(position.coords.longitude);
-      });
-    }
-  };
+  useEffect(() => {
+    const interval = setInterval(() => {
+      sendLocation();
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [ws]);
 
   useEffect(() => {
-    getUpdatedLocation();
+    startCommunication();
   }, []);
 
   const startCommunication = () => {
@@ -54,7 +49,6 @@ const DriverdashBoard = () => {
 
     socket.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      // Set the booking request data to show the notification
       console.log('Received booking request:', data);
       setBookingRequest(data);
     };
@@ -73,35 +67,6 @@ const DriverdashBoard = () => {
       socket.close();
     };
   };
-
-  const handleConfirmBooking = async () => {
-    console.log('Booking confirmed');
-    // Handle confirmation logic here
-    const response = await confirmBooking({
-      "mongo_id" : bookingRequest.mongo_id
-    })
-    if (response.status === 200) {
-      const data = response.data;
-      console.log('Booking confirmed successfully');
-      setJourney(true);
-      setUserId(data.user_id);
-    }
-    setBookingRequest(null); // Hide notification after confirmation
-  };
-
-  const handleIgnoreBooking = () => {
-    console.log('Booking ignored');
-    // Handle ignore logic here
-    setBookingRequest(null); // Hide notification after ignoring
-  };
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      sendLocation();
-    }, 15000);
-
-    return () => clearInterval(interval);
-  }, [ws]);
 
   const sendLocation = () => {
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -126,77 +91,81 @@ const DriverdashBoard = () => {
     }
   };
 
+  const handleConfirmBooking = async () => {
+    const response = await confirmBooking({ mongo_id: bookingRequest.mongo_id });
+    if (response.status === 200) {
+      const data = response.data;
+      setJourney(true);
+      setUserId(data.user_id);
+    }
+    setBookingRequest(null); 
+  };
+
+  const handleIgnoreBooking = () => {
+    setBookingRequest(null);
+  };
+
+  const updateJourneyStatus = async () => {
+    if (!journeyStatus || !userId) return;
+    
+    try {
+      const response = await updateBookingStatus(userId, { status: journeyStatus });
+      if (response.status === 404 || journeyStatus === 'completed') {
+        resetJourney();
+      }
+    } catch (error) {
+      resetJourney();
+    }
+  };
+
   const resetJourney = () => {
     setJourney(false);
     setUserId(null);
     setJourneyStatus(null);
   };
 
-  const updateJourneyStatus = async () => {
-    if (!journeyStatus) {
-      console.error('Journey status is required');
-      return;
-    }
-    if (!userId) {
-      console.error('User ID is required');
-      return;
-    }
-    const data = {
-      status: journeyStatus,
-    };
-    try{
-      const response = updateBookingStatus(userId, data);
-      if (response.status === 404) {
-        resetJourney();
-      }
-    } catch (error) {
-      resetJourney();
-    }
-    if (data.status === 'completed') {
-      resetJourney();
-    }
-
-  };
-
   return (
     <div>
       <Navbar />
       <div className={css({
-        padding: "20px",
-        display: "flex",
-        justifyContent: "center",
-        flexDirection: "column",
-        alignItems: "center",
-        marginTop: "50px"
+        padding: '20px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: '50px',
       })}>
-        <Card overrides={{ Root: { style: { width: '400px' } } }}>
-          <h2>Driver Dashboard</h2>
-          <Button onClick={startCommunication} disabled={isConnected}>
-            Start Communication
-          </Button>
+        <Card overrides={{ Root: { style: { width: '450px', padding: '20px', textAlign: 'center' } } }}>
+          <h2 className={css({ marginBottom: '20px' })}>Driver Dashboard</h2>
         </Card>
 
-        { journey && userId && (
-          <Card overrides={{ Root: { style: { width: '400px', marginTop: '20px' } } }}>
+        {journey && userId && (
+          <Card overrides={{ Root: { style: { width: '450px', marginTop: '20px', padding: '20px', textAlign: 'center' } } }}>
             <h3>Current Journey</h3>
             <p>User ID: {userId}</p>
-
-            <FormControl
-              label="status"
-              caption="Please enter the status of the journey to update"
-            >
+            <FormControl label="Update Journey Status">
               <Input
-                placeholder="Status"
                 value={journeyStatus}
                 onChange={(e) => setJourneyStatus(e.target.value)}
+                placeholder="Enter journey status"
               />
             </FormControl>
-            <Button onClick={updateJourneyStatus}>
-              Update Journey Status
+            <Button 
+              onClick={updateJourneyStatus}
+              overrides={{
+                BaseButton: {
+                  style: { 
+                    width: '100%', 
+                    backgroundColor: '#FF5A5F', 
+                    ':hover': { backgroundColor: '#E04848' }
+                  },
+                },
+              }}
+            >
+              Update Status
             </Button>
-
           </Card>
-          )}
+        )}
 
         {bookingRequest && (
           <BookingNotification
