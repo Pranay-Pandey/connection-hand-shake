@@ -1,15 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { FormControl } from "baseui/form-control";
-import { Input } from "baseui/input";
-import { Button } from "baseui/button";
 import { Heading, HeadingLevel } from "baseui/heading";
 import { useStyletron } from "baseui";
 import { Table } from "baseui/table-semantic";
-import { ProgressBar } from "baseui/progress-bar";
 import { Card, StyledBody } from "baseui/card";
 import { Tab, Tabs } from "baseui/tabs-motion";
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from 'recharts';
-import axios from 'axios';
+import { getFleetStats, getBookingAnalytics, getDriverPerformance, getVehicleLocations } from '../services/api';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 
@@ -27,16 +23,16 @@ export default function AdminDashboard() {
 
   const fetchData = async () => {
     try {
-      const fleetStatsResponse = await axios.get('http://localhost:8085/admin/fleet-stats');
+      const fleetStatsResponse = await getFleetStats();
       setFleetStats(fleetStatsResponse.data);
 
-      const driverPerformanceResponse = await axios.get('http://localhost:8085/admin/driver-performance');
+      const driverPerformanceResponse = await getDriverPerformance();
       setDriverPerformance(driverPerformanceResponse.data);
 
-      const bookingAnalyticsResponse = await axios.get('http://localhost:8085/admin/booking-analytics');
+      const bookingAnalyticsResponse = await getBookingAnalytics();
       setBookingAnalytics(bookingAnalyticsResponse.data);
 
-      const vehicleLocationsResponse = await axios.get('http://localhost:8085/admin/vehicle-locations');
+      const vehicleLocationsResponse = await getVehicleLocations();
       setVehicleLocations(vehicleLocationsResponse.data);
     } catch (error) {
       console.error('Error fetching data:', error);
