@@ -105,7 +105,11 @@ func (s *NotificationService) handleDriverWebSocket(c *gin.Context) {
 
 	// Store the authenticated connection
 	s.driverConnections.Store(driverID, conn)
-	defer s.driverConnections.Delete(driverID)
+	defer func() {
+		s.driverConnections.Delete(driverID)
+		// send empty location to kafka to remove driver from cache
+		s.sendLocationUpdate(utils.DriverLocation{DriverID: driverID})
+	}()
 
 	// Proceed with WebSocket communication
 	for {
@@ -116,7 +120,7 @@ func (s *NotificationService) handleDriverWebSocket(c *gin.Context) {
 		}
 		location.DriverID = driverID
 
-		// Send the location update to Kafka
+		// Send the location update
 		if err := s.sendLocationUpdate(location); err != nil {
 			log.Printf("Error sending location update: %v", err)
 		}
@@ -129,16 +133,20 @@ func (s *NotificationService) sendLocationUpdate(location utils.DriverLocation) 
 		return fmt.Errorf("failed to marshal location: %w", err)
 	}
 
-	err = s.locationWriter.WriteMessages(context.Background(),
-		kafka.Message{Value: message})
-
 	// if there is any driver user connection, send the notification to the user
 	userID, ok := s.driverUserConnections.Load(location.DriverID)
 	if ok {
+		log.Print("Sending location update to user")
 		conn, ok := s.userConnections.Load(userID.(string))
 		if ok {
 			err = conn.(*websocket.Conn).WriteJSON(location)
+		} else {
+			log.Print("User connection not found")
 		}
+	} else {
+		log.Print("sending location to Kafka")
+		err = s.locationWriter.WriteMessages(context.Background(),
+			kafka.Message{Value: message})
 	}
 
 	return err

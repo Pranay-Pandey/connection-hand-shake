@@ -13,8 +13,9 @@ import (
 )
 
 type DriverLocationService struct {
-	redisClient *redis.Client
-	kafkaReader *kafka.Reader
+	redisClient            *redis.Client
+	kafkaReader            *kafka.Reader
+	bookNotificationReader *kafka.Reader
 }
 
 func main() {
@@ -28,11 +29,13 @@ func main() {
 	}
 
 	service := &DriverLocationService{
-		redisClient: redisClient,
-		kafkaReader: utils.InitKafkaReader("driver_locations", "driver-location-service"),
+		redisClient:            redisClient,
+		kafkaReader:            utils.InitKafkaReader("driver_locations", "driver-location-service"),
+		bookNotificationReader: utils.InitKafkaReader("booking_notifications", "booking_notification"),
 	}
 
 	go service.consumeDriverLocations()
+	go service.consumeBookingNotifications()
 
 	utils.WaitForShutdown(redisClient, service.kafkaReader)
 }
@@ -48,6 +51,14 @@ func (s *DriverLocationService) consumeDriverLocations() {
 		var location utils.DriverLocation
 		if err := json.Unmarshal(msg.Value, &location); err != nil {
 			log.Printf("Error unmarshaling location update: %v", err)
+			continue
+		}
+
+		if location.Location.Latitude == 0 && location.Location.Longitude == 0 {
+			log.Print("Removing driver from cache")
+			if err := s.removeDriverFromCache(location.DriverID); err != nil {
+				log.Printf("Error removing driver from cache: %v", err)
+			}
 			continue
 		}
 
@@ -73,4 +84,32 @@ func (s *DriverLocationService) updateDriverLocation(location utils.DriverLocati
 	_, err = s.redisClient.Expire(context.Background(), "driver_locations:"+location.DriverID, expiration).Result()
 
 	return err
+}
+
+func (s *DriverLocationService) removeDriverFromCache(driverID string) error {
+	_, err := s.redisClient.ZRem(context.Background(), "driver_locations", driverID).Result()
+	return err
+}
+
+func (s *DriverLocationService) consumeBookingNotifications() {
+	for {
+		msg, err := s.bookNotificationReader.ReadMessage(context.Background())
+		if err != nil {
+			log.Printf("Error reading message: %v", err)
+			continue
+		}
+
+		var notification utils.BookedNotification
+		if err := json.Unmarshal(msg.Value, &notification); err != nil {
+			log.Printf("Error unmarshaling notification: %v", err)
+			continue
+		}
+
+		if notification.Status == "booked" {
+			log.Print("Transport booked, removing driver from cache")
+			if err := s.removeDriverFromCache(notification.DriverID); err != nil {
+				log.Printf("Error removing driver from cache: %v", err)
+			}
+		}
+	}
 }
