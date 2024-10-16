@@ -73,8 +73,13 @@ export const getPrice = (data) => pricingApi.post('/pricing/estimate', data)
 export const makeBooking = (bookingData) => bookingApi.post('/booking', bookingData)
 export const confirmBooking = (bookingId) => bookingApi.post(`/booking/accept`, bookingId)
 export const updateBookingStatus = (userId, bookingData) => bookingApi.patch(`/booking/${userId}`, bookingData)
+export const getUserBookingHistory = () => bookingApi.get('/user/booking-history')
+export const getDriverBookingHistory = () => bookingApi.get('/driver/booking-history')
 
 export const getFleetStats = () => adminApi.get('/fleet-stats')
 export const getDriverPerformance = () => adminApi.get('/driver-performance')
 export const getBookingAnalytics = () => adminApi.get('/booking-analytics')
 export const getVehicleLocations = () => adminApi.get('/vehicle-locations')
+
+export const getLocationName = (lat, long) => axios.get(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${long}&format=json`)
+export const getLocationCoordinates = (query) => axios.get(`https://nominatim.openstreetmap.org/search?q=${query}&format=json&addressdetails=1&limit=5`)

@@ -6,11 +6,11 @@ import { Heading, HeadingLevel } from "baseui/heading";
 import { useStyletron } from "baseui";
 import { ToasterContainer, toaster } from "baseui/toast";
 import Navbar from "../components/Navbar";
-import { makeBooking, getPrice } from "../services/api";
+import { makeBooking, getPrice, getUserBookingHistory, getLocationName, getLocationCoordinates } from "../services/api";
 import { Select, TYPE } from "baseui/select";
 import _ from "lodash";
-import axios from "axios";
 import TrackingMap from "../components/TrackingMap";
+import { Accordion, Panel } from "baseui/accordion"; 
 
 export default function UserDashboard() {
   const [css] = useStyletron();
@@ -36,14 +36,29 @@ export default function UserDashboard() {
   ]);
   const [driverName, setDriverName] = useState('');
   const [status, setStatus] = useState('');
+  const [bookingHistory, setBookingHistory] = useState([]); 
 
   const debouncedFetchPickup = useCallback(_.debounce((query) => fetchLocations(query, setPickupOptions), 500), []);
   const debouncedFetchDropoff = useCallback(_.debounce((query) => fetchLocations(query, setDropoffOptions), 500), []);
 
+  // Fetch booking history on mount
+  useEffect(() => {
+    const fetchBookingHistory = async () => {
+      try {
+        const response = await getUserBookingHistory();
+        setBookingHistory(response.data.bookings);
+      } catch (error) {
+        toaster.negative("Error fetching booking history.", {});
+      }
+    };
+    fetchBookingHistory();
+  }, []);
+
   const fetchLocations = async (query, setOptions) => {
     if (query.length < 3) return;
     try {
-      const response = await axios.get(`https://nominatim.openstreetmap.org/search?q=${query}&format=json&addressdetails=1&limit=5`);
+      // const response = await axios.get(`https://nominatim.openstreetmap.org/search?q=${query}&format=json&addressdetails=1&limit=5`);
+      const response = await getLocationCoordinates(query);
       const options = response.data.map((location) => ({
         id: location.display_name,
         latitude: location.lat,
@@ -146,10 +161,12 @@ export default function UserDashboard() {
         pickup: {
           latitude: parseFloat(pickup[0].latitude),
           longitude: parseFloat(pickup[0].longitude),
+          name: pickup[0].id,
         },
         dropoff: {
           latitude: parseFloat(dropoff[0].latitude),
           longitude: parseFloat(dropoff[0].longitude),
+          name: dropoff[0].id,
         },
         vehicle_type: vehicleType,
         price: parseFloat(price),
@@ -161,6 +178,34 @@ export default function UserDashboard() {
     } catch (error) {
       toaster.negative("Error making booking. Please try again.", {});
     }
+  };
+
+  const renderBookingHistory = () => {
+    if (bookingHistory.length === 0) {
+      return <p>No booking history available.</p>;
+    }
+
+    return (
+      <Accordion>
+        {bookingHistory.map((booking, index) => (
+          <Panel key={index} title={`Booking Status: ${booking.status}`}>
+            <div className={css({
+              backgroundColor: "#fff",
+              padding: "10px",
+              borderRadius: "8px",
+              boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
+              marginBottom: "10px"
+            })}>
+              <p><strong>Price:</strong> ${booking.price}</p>
+              <p><strong>Pickup </strong> {booking?.pickup?.name} </p>
+              <p><strong>Dropoff </strong> {booking?.dropoff?.name} </p>
+              <p><strong>Created At:</strong> {new Date(booking.created_at).toLocaleString()}</p>
+              <p><strong>Completed At:</strong> {booking.completed_at ? new Date(booking.completed_at).toLocaleString() : "N/A"}</p>
+            </div>
+          </Panel>
+        ))}
+      </Accordion>
+    );
   };
 
   return (
@@ -294,6 +339,29 @@ export default function UserDashboard() {
             </form>
           </div>
         )}
+
+        {/* Booking History Section */}
+        <div className={css({
+          width: "100%",
+          maxWidth: "600px",
+          marginTop: "40px",
+          backgroundColor: "#fff",
+          padding: "20px",
+          borderRadius: "10px",
+          boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)",
+        })}>
+          <HeadingLevel>
+            <Heading className={css({
+              fontSize: "1.5rem",
+              color: "#34495e",
+              textAlign: "center",
+              marginBottom: "20px",
+            })}>
+              Booking History
+            </Heading>
+          </HeadingLevel>
+          {renderBookingHistory()}
+        </div>
       </div>
     </div>
   );

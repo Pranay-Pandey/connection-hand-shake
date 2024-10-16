@@ -11,8 +11,8 @@ const BookingNotification = ({ booking, onConfirm, onIgnore }) => {
       <StyledBody>
         <h3>New Booking Request</h3>
         <p><strong>User:</strong> {booking.user_name}</p>
-        <p><strong>Pickup:</strong> {booking.pickup.latitude}, {booking.pickup.longitude}</p>
-        <p><strong>Dropoff:</strong> {booking.dropoff.latitude}, {booking.dropoff.longitude}</p>
+        <p><strong>Pickup:</strong> {booking?.pickup?.name} </p>
+        <p><strong>Dropoff:</strong> {booking?.dropoff?.name} </p>
         <p><strong>Price:</strong> ${booking.price}</p>
       </StyledBody>
       <div className={css({ display: 'flex', justifyContent: 'space-between', padding: '10px 20px' })}>
