@@ -3,6 +3,7 @@ import Navbar from '../components/Navbar';
 import { Button } from 'baseui/button';
 import { FormControl } from "baseui/form-control";
 import { Input } from "baseui/input";
+import { Select, TYPE } from 'baseui/select';
 import { Card } from 'baseui/card';
 import { useStyletron } from 'baseui';
 import BookingNotification from '../components/BookingNotification'; 
@@ -16,7 +17,14 @@ const DriverdashBoard = () => {
   const [bookingRequest, setBookingRequest] = useState(null);
   const [journey, setJourney] = useState(false);
   const [userId, setUserId] = useState(null);
-  const [journeyStatus, setJourneyStatus] = useState("");
+  const [journeyStatus, setJourneyStatus] = useState([
+    { label: 'Enroute to Pickup', id: 'enroute_to_pickup' },
+  ]);
+  const [statusOptions, setStatusOptions] = useState([
+    { label: 'Enroute to Pickup', id: 'enroute_to_pickup' },
+    { label: 'Picked up', id: 'picked_up' },
+    { label: 'completed', id: 'completed' },
+  ]);
 
   const token = localStorage.getItem('token');
   const driverID = localStorage.getItem('driverID');
@@ -106,11 +114,11 @@ const DriverdashBoard = () => {
   };
 
   const updateJourneyStatus = async () => {
-    if (!journeyStatus || !userId) return;
+    if (!journeyStatus.length || !userId) return;
     
     try {
-      const response = await updateBookingStatus(userId, { status: journeyStatus });
-      if (response.status === 404 || journeyStatus === 'completed') {
+      const response = await updateBookingStatus(userId, { status: journeyStatus[0].id });
+      if (response.status === 404 || journeyStatus[0].id === 'completed') {
         resetJourney();
       }
     } catch (error) {
@@ -144,10 +152,14 @@ const DriverdashBoard = () => {
             <h3>Current Journey</h3>
             <p>User ID: {userId}</p>
             <FormControl label="Update Journey Status">
-              <Input
+              <Select
+                options={statusOptions}
+                labelKey="label"
+                valueKey="id"
+                type={TYPE.select}
                 value={journeyStatus}
-                onChange={(e) => setJourneyStatus(e.target.value)}
-                placeholder="Enter journey status"
+                onChange={({ value }) => setJourneyStatus(value)}
+                maxDropdownHeight="300px"
               />
             </FormControl>
             <Button 

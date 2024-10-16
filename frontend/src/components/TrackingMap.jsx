@@ -7,19 +7,23 @@ const TrackingMap = ({ lat, lon, finalLat, finalLon }) => {
   const markerRef = useRef(null);
   const finalMarkerRef = useRef(null);
 
-  if (!lat || !lon) {
-    return <div>Loading...</div>;
+  if (mapRef.current && markerRef.current) {
+    markerRef.current.setLatLng([lat, lon]);
+    console.log("updated marker");
   }
 
   useEffect(() => {
     if (!mapRef.current) {
-      mapRef.current = L.map("map").setView([lat, lon], 13);
-      
+      mapRef.current = L.map("map").setView([lat, lon], 5);
+
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
       }).addTo(mapRef.current);
-      
+
+      // Add the current location marker
       markerRef.current = L.marker([lat, lon]).addTo(mapRef.current);
+
+      // Add the final destination marker
       finalMarkerRef.current = L.marker([finalLat, finalLon], {
         icon: L.icon({
           iconUrl: "https://cdn.rawgit.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
@@ -29,13 +33,11 @@ const TrackingMap = ({ lat, lon, finalLat, finalLon }) => {
         }),
       }).addTo(mapRef.current);
     }
+    console.log("lat: ", lat, "lon: ", lon);
 
-    markerRef.current.setLatLng([lat, lon]);  // Update marker position
-    mapRef.current.setView([lat, lon], 13);   // Update map view
-    finalMarkerRef.current.setLatLng([finalLat, finalLon]);  // Update final marker position
-  }, [lat, lon]);
+  }, [lat, lon, finalLat, finalLon]); // Dependencies to trigger re-render when these values change
 
-  return <div id="map" style={{ height: "50svh", width: "70vw" }}></div>;
+  return <div id="map" style={{ height: "50vh", width: "80vw" }}></div>;
 };
 
 export default TrackingMap;

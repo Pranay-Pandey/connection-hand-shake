@@ -4,6 +4,7 @@ import { Input } from "baseui/input";
 import { Button } from "baseui/button";
 import { Heading, HeadingLevel } from "baseui/heading";
 import { useStyletron } from "baseui";
+import { ToasterContainer, toaster } from "baseui/toast";
 import Navbar from "../components/Navbar";
 import { makeBooking, getPrice } from "../services/api";
 import { Select, TYPE } from "baseui/select";
@@ -33,6 +34,8 @@ export default function UserDashboard() {
     { id: "Heavy Truck", value: "heavy_truck" },
     { id: "Trailer", value: "trailer" },
   ]);
+  const [driverName, setDriverName] = useState('');
+  const [status, setStatus] = useState('');
 
   const debouncedFetchPickup = useCallback(_.debounce((query) => fetchLocations(query, setPickupOptions), 500), []);
   const debouncedFetchDropoff = useCallback(_.debounce((query) => fetchLocations(query, setDropoffOptions), 500), []);
@@ -48,7 +51,7 @@ export default function UserDashboard() {
       }));
       setOptions(options);
     } catch (error) {
-      console.error("Error fetching locations:", error);
+      toaster.negative("Error fetching locations. Please try again.", {});
     }
   };
 
@@ -56,26 +59,60 @@ export default function UserDashboard() {
     const socket = new WebSocket(`ws://localhost:8080/user/ws`);
     socket.onopen = () => {
       setIsConnected(true);
+      toaster.info("Made a booking.", {});
       socket.send(JSON.stringify({ token: localStorage.getItem('token') }));
     };
     socket.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      setDriverLocation({
-        latitude: data.location.latitude,
-        longitude: data.location.longitude,
-      });
-      if (!showMap)
-        setShowMap(true); // Switch to map view once the booking is accepted
+      console.log("Received data:", data);
+      if (data.status) {
+        setDriverName(data.driver_id);
+        setStatus(data.status);
+        if (data.status === "booked") { 
+          setDriverLocation({
+            latitude: parseFloat(pickup[0].latitude),
+            longitude: parseFloat(pickup[0].longitude),
+          });
+        }
+
+        if (!showMap) setShowMap(true);
+        if (data.status === "completed") {
+          toaster.positive("Booking completed. Thank you for using our service.", {});
+          setShowMap(false);
+          // Reset all states
+          setVehicleType('');
+          setPrice('');
+          setPickupOptions([]);
+          setDropoffOptions([]);
+          setPickup([]);
+          setDropoff([]);
+          setDriverLocation({
+            latitude: null,
+            longitude: null,
+          });
+          setIsConnected(false);
+          setDriverName('');
+          setStatus('');
+        }
+      }
+      else {
+        setDriverLocation({
+          latitude: data.location.latitude,
+          longitude: data.location.longitude,
+        });
+        console.log()
+      }// Switch to map view once the booking is accepted
     };
   };
 
   const fetchPrice = async () => {
     if (!vehicleType || !pickup.length || !dropoff.length) {
-      alert("Please provide all details to fetch the price.");
+      toaster.warning("Please provide all details to fetch the price.", {});
       return;
     }
 
     setLoadingPrice(true);
+    toaster.info("Fetching price...", {});
 
     try {
       const response = await getPrice({
@@ -90,9 +127,9 @@ export default function UserDashboard() {
         }
       });
       setPrice(response.data.price.toFixed(2));
+      toaster.positive(`Estimated Price: $${response.data.price.toFixed(2)}`, {});
     } catch (error) {
-      console.error(error);
-      alert("Error fetching price. Please try again.");
+      toaster.negative("Error fetching price. Please try again.", {});
     } finally {
       setLoadingPrice(false);
     }
@@ -101,7 +138,7 @@ export default function UserDashboard() {
   const bookRequest = async (e) => {
     e.preventDefault();
     if (!vehicleType || !price || !pickup.length || !dropoff.length) {
-      alert("Please provide all the details.");
+      toaster.warning("Please provide all the details.", {});
       return;
     }
     try {
@@ -119,15 +156,17 @@ export default function UserDashboard() {
       });
       if (response.status === 200) {
         startSocketConnection();
+        toaster.positive("Booking request successful. Connecting to driver...", {});
       }
     } catch (error) {
-      console.error(error);
+      toaster.negative("Error making booking. Please try again.", {});
     }
   };
 
   return (
     <div>
       <Navbar />
+      <ToasterContainer autoHideDuration={3000} />
       <div className={css({
         display: "flex",
         justifyContent: "center",
@@ -149,19 +188,26 @@ export default function UserDashboard() {
         </HeadingLevel>
 
         {showMap ? (
+          <>
+          <TrackingMap lat={driverLocation.latitude} lon={driverLocation.longitude} 
+            finalLat={dropoff[0].latitude} finalLon={dropoff[0].longitude}
+          />
+
           <div className={css({
-            width: "100%",
-            maxWidth: "600px",
-            height: "400px",
-            margin: "20px 0",
-            boxShadow: "0 6px 12px rgba(0,0,0,0.1)",
+            backgroundColor: "#fff",
+            padding: "20px",
             borderRadius: "10px",
-            overflow: "hidden",
+            boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)",
+            width: "100%",
+            maxWidth: "400px",
+            transition: "all 0.3s ease-in-out",
+            marginTop: "20px",
           })}>
-            <TrackingMap lat={driverLocation.latitude} lon={driverLocation.longitude} 
-              finalLat={dropoff[0].latitude} finalLon={dropoff[0].longitude}
-            />
+            <p className={css({ fontWeight: "bold" })}>Driver: {driverName}</p>
+            <p className={css({ fontWeight: "bold" })}>Status: {status}</p>
           </div>
+
+          </>
         ) : (
           <div className={css({
             backgroundColor: "#fff",
@@ -234,35 +280,17 @@ export default function UserDashboard() {
                 >
                   {loadingPrice ? "Fetching Price..." : "Get Price"}
                 </Button>
+                {price && <p className={css({ marginTop: "10px", fontWeight: "bold" })}>Estimated Price: ${price}</p>}
               </div>
 
-              {price && (
-                <div className={css({
-                  marginTop: "20px",
-                  textAlign: "center",
-                  color: "#27ae60",
-                  fontSize: "1.5rem",
-                })}>
-                  Estimated Price: ${price}
-                </div>
-              )}
-
+              { price &&
               <div className={css({
-                textAlign: 'center',
-                marginTop: '20px',
+                textAlign: "center",
+                marginTop: "20px",
               })}>
-                <Button type="submit" overrides={{
-                  BaseButton: {
-                    style: {
-                      width: "100%",
-                      backgroundColor: "#1abc9c",
-                      color: "#fff",
-                    },
-                  },
-                }}>
-                  Make a Booking
-                </Button>
+                <Button type="submit">Book Request</Button>
               </div>
+                }
             </form>
           </div>
         )}
