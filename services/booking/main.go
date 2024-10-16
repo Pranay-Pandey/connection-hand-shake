@@ -7,6 +7,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
 
 	"logistics-platform/lib/middlewares/auth"
 	"logistics-platform/lib/middlewares/cors"
@@ -27,6 +32,8 @@ type BookingService struct {
 	bookingWriter      *kafka.Writer
 	redisClient        *redis.Client
 	PostgreSQLConn     *pgx.Conn
+	shutdown           chan struct{}
+	wg                 sync.WaitGroup
 }
 
 type Booking struct {
@@ -73,6 +80,7 @@ func main() {
 		redisClient:        redisClient,
 		PostgreSQLConn:     postgresConn,
 		bookingWriter:      utils.InitKafkaWriter("booking_notifications"),
+		shutdown:           make(chan struct{}),
 	}
 
 	router := gin.Default()
@@ -99,7 +107,72 @@ func main() {
 		}
 	}()
 
-	utils.WaitForShutdown(server, service.notificationWriter, redisClient)
+	// Graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("Shutting down server...")
+
+	// Create a timeout context for the entire shutdown process
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// Trigger shutdown for all goroutines
+	close(service.shutdown)
+
+	// Shutdown the HTTP server
+	go func() {
+		if err := server.Shutdown(ctx); err != nil {
+			log.Printf("Server forced to shutdown: %v", err)
+		}
+	}()
+
+	// Wait for all goroutines to finish or timeout
+	done := make(chan struct{})
+	go func() {
+		service.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Println("All goroutines finished")
+	case <-ctx.Done():
+		log.Println("Shutdown timed out")
+	}
+
+	// Close Kafka connections with timeout
+	closeWithTimeout := func(closer func() error, name string) {
+		ch := make(chan struct{})
+		go func() {
+			defer close(ch)
+			if err := closer(); err != nil {
+				log.Printf("Error closing %s: %v", name, err)
+			}
+		}()
+		select {
+		case <-ch:
+			log.Printf("%s closed successfully", name)
+		case <-time.After(5 * time.Second):
+			log.Printf("Timeout closing %s", name)
+		}
+	}
+
+	closeWithTimeout(service.notificationWriter.Close, "notification writer")
+	closeWithTimeout(service.bookingWriter.Close, "book notification writer")
+
+	// Close PostgreSQL connection
+	if err := postgresConn.Close(context.Background()); err != nil {
+		log.Printf("Error closing PostgreSQL connection: %v", err)
+	}
+
+	// Close Redis connection
+	if err := redisClient.Close(); err != nil {
+		log.Printf("Error closing Redis connection: %v", err)
+	}
+
+	log.Println("Server exiting")
+	os.Exit(0)
 }
 
 func (s *BookingService) handleBookingUpdate(c *gin.Context) {
@@ -146,9 +219,7 @@ func (s *BookingService) handleBookingUpdate(c *gin.Context) {
 		}
 	}
 
-	if booking.Status == "completed" || booking.Status == "cancelled" {
-		go s.produceBookingEvent(userID, driver.UserID, "completed")
-	}
+	go s.produceBookingEvent(userID, driver.UserID, booking.Status)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Booking updated"})
 }

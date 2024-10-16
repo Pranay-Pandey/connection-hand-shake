@@ -1,4 +1,3 @@
-// services/notification/main.go
 package main
 
 import (
@@ -8,10 +7,13 @@ import (
 	"log"
 	"logistics-platform/lib/middlewares/cors"
 	"logistics-platform/lib/token"
-	"net/http"
-	"sync"
-
 	"logistics-platform/lib/utils"
+	"net/http"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -29,6 +31,8 @@ type NotificationService struct {
 	locationWriter         *kafka.Writer
 	notificationReader     *kafka.Reader
 	bookNotificationReader *kafka.Reader
+	shutdown               chan struct{}
+	wg                     sync.WaitGroup
 }
 
 func main() {
@@ -40,6 +44,7 @@ func main() {
 		locationWriter:         utils.InitKafkaWriter("driver_locations"),
 		notificationReader:     utils.InitKafkaReader("driver_notification", "driver_notification"),
 		bookNotificationReader: utils.InitKafkaReader("booking_notifications", "booking_notification"),
+		shutdown:               make(chan struct{}),
 	}
 
 	router := gin.Default()
@@ -50,13 +55,13 @@ func main() {
 		c.String(http.StatusOK, "pong")
 	})
 
-	go service.consumeNotifications()
-	go service.consumeBookingNotifications()
-
 	server := &http.Server{
 		Addr:    ":8080",
 		Handler: router,
 	}
+
+	go service.consumeNotifications()
+	go service.consumeBookingNotifications()
 
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -64,7 +69,171 @@ func main() {
 		}
 	}()
 
-	utils.WaitForShutdown(server, service.locationWriter, service.notificationReader)
+	// Graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("Shutting down server...")
+
+	// Create a timeout context for the entire shutdown process
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// Trigger shutdown for all goroutines
+	close(service.shutdown)
+
+	// Shutdown the HTTP server
+	go func() {
+		if err := server.Shutdown(ctx); err != nil {
+			log.Printf("Server forced to shutdown: %v", err)
+		}
+	}()
+
+	// Wait for all goroutines to finish or timeout
+	done := make(chan struct{})
+	go func() {
+		service.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Println("All goroutines finished")
+	case <-ctx.Done():
+		log.Println("Shutdown timed out")
+	}
+
+	// Close Kafka connections with timeout
+	closeWithTimeout := func(closer func() error, name string) {
+		ch := make(chan struct{})
+		go func() {
+			defer close(ch)
+			if err := closer(); err != nil {
+				log.Printf("Error closing %s: %v", name, err)
+			}
+		}()
+		select {
+		case <-ch:
+			log.Printf("%s closed successfully", name)
+		case <-time.After(5 * time.Second):
+			log.Printf("Timeout closing %s", name)
+		}
+	}
+
+	closeWithTimeout(service.locationWriter.Close, "location writer")
+	closeWithTimeout(service.notificationReader.Close, "notification reader")
+	closeWithTimeout(service.bookNotificationReader.Close, "book notification reader")
+
+	log.Println("Server exiting")
+	os.Exit(0)
+}
+
+func (s *NotificationService) consumeNotifications() {
+	s.wg.Add(1)
+	defer s.wg.Done()
+
+	for {
+		select {
+		case <-s.shutdown:
+			log.Println("Stopping notification consumer")
+			return
+		default:
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			msg, err := s.notificationReader.FetchMessage(ctx)
+			cancel()
+
+			if err != nil {
+				if err == context.DeadlineExceeded {
+					// No message available, wait a bit before trying again
+					time.Sleep(1 * time.Second)
+				} else {
+					log.Printf("Error fetching message: %v", err)
+				}
+				continue
+			}
+
+			// Process the message
+			var notification utils.BookingNotification
+			if err := json.Unmarshal(msg.Value, &notification); err != nil {
+				log.Printf("Error unmarshaling notification: %v", err)
+			} else {
+				if err := s.sendNotification(notification); err != nil {
+					log.Printf("Error sending notification: %v", err)
+				}
+			}
+
+			// Commit the message
+			if err := s.notificationReader.CommitMessages(context.Background(), msg); err != nil {
+				log.Printf("Error committing message: %v", err)
+			}
+		}
+	}
+}
+
+func (s *NotificationService) consumeBookingNotifications() {
+	s.wg.Add(1)
+	defer s.wg.Done()
+
+	for {
+		select {
+		case <-s.shutdown:
+			log.Println("Stopping booking notification consumer")
+			return
+		default:
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			msg, err := s.bookNotificationReader.FetchMessage(ctx)
+			cancel()
+
+			if err != nil {
+				if err == context.DeadlineExceeded {
+					// No message available, wait a bit before trying again
+					time.Sleep(1 * time.Second)
+				} else {
+					log.Printf("Error fetching message: %v", err)
+				}
+				continue
+			}
+
+			// Process the message
+			var notification utils.BookedNotification
+			if err := json.Unmarshal(msg.Value, &notification); err != nil {
+				log.Printf("Error unmarshaling notification: %v", err)
+			}
+
+			if notification.Status == "booked" {
+				s.driverUserConnections.Store(notification.DriverID, notification.UserID)
+				// send back the notification to the user
+				conn, ok := s.userConnections.Load(notification.UserID)
+				if ok {
+					_ = conn.(*websocket.Conn).WriteJSON(notification)
+				}
+			} else if notification.Status == "completed" {
+				s.driverUserConnections.Delete(notification.DriverID)
+
+				conn, ok := s.userConnections.Load(notification.UserID)
+				if ok {
+					_ = conn.(*websocket.Conn).WriteJSON(notification)
+				}
+
+				// remove the user driver connection
+				s.driverUserConnections.Delete(notification.DriverID)
+
+				// remove the user connection from the map
+				s.userConnections.Delete(notification.UserID)
+			} else {
+				// send back the notification to the user
+				conn, ok := s.userConnections.Load(notification.UserID)
+				if ok {
+					_ = conn.(*websocket.Conn).WriteJSON(notification)
+				}
+			}
+
+			// Commit the message
+			if err := s.bookNotificationReader.CommitMessages(context.Background(), msg); err != nil {
+				log.Printf("Error committing message: %v", err)
+			}
+		}
+	}
 }
 
 func (s *NotificationService) handleDriverWebSocket(c *gin.Context) {
@@ -136,40 +305,18 @@ func (s *NotificationService) sendLocationUpdate(location utils.DriverLocation) 
 	// if there is any driver user connection, send the notification to the user
 	userID, ok := s.driverUserConnections.Load(location.DriverID)
 	if ok {
-		log.Print("Sending location update to user")
 		conn, ok := s.userConnections.Load(userID.(string))
 		if ok {
 			err = conn.(*websocket.Conn).WriteJSON(location)
 		} else {
-			log.Print("User connection not found")
+			// log.Print("User connection not found")
 		}
 	} else {
-		log.Print("sending location to Kafka")
 		err = s.locationWriter.WriteMessages(context.Background(),
 			kafka.Message{Value: message})
 	}
 
 	return err
-}
-
-func (s *NotificationService) consumeNotifications() {
-	for {
-		msg, err := s.notificationReader.ReadMessage(context.Background())
-		if err != nil {
-			log.Printf("Error reading message: %v", err)
-			continue
-		}
-
-		var notification utils.BookingNotification
-		if err := json.Unmarshal(msg.Value, &notification); err != nil {
-			log.Printf("Error unmarshaling notification: %v", err)
-			continue
-		}
-
-		if err := s.sendNotification(notification); err != nil {
-			log.Printf("Error sending notification: %v", err)
-		}
-	}
 }
 
 func (s *NotificationService) sendNotification(notification utils.BookingNotification) error {
@@ -226,28 +373,6 @@ func (s *NotificationService) handleUserWebSocket(c *gin.Context) {
 		if err != nil {
 			log.Printf("Error reading message: %v", err)
 			break
-		}
-	}
-}
-
-func (s *NotificationService) consumeBookingNotifications() {
-	for {
-		msg, err := s.bookNotificationReader.ReadMessage(context.Background())
-		if err != nil {
-			log.Printf("Error reading message: %v", err)
-			continue
-		}
-
-		var notification utils.BookedNotification
-		if err := json.Unmarshal(msg.Value, &notification); err != nil {
-			log.Printf("Error unmarshaling notification: %v", err)
-			continue
-		}
-
-		if notification.Status == "booked" {
-			s.driverUserConnections.Store(notification.DriverID, notification.UserID)
-		} else if notification.Status == "completed" {
-			s.driverUserConnections.Delete(notification.DriverID)
 		}
 	}
 }

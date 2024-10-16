@@ -123,8 +123,6 @@ func WaitForShutdown(closers ...interface{ Close() error }) {
 			log.Printf("Error closing: %v", err)
 		}
 	}
-
-	log.Println("Shutdown complete")
 }
 
 func LoadConfig() error {

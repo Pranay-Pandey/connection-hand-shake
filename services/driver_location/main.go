@@ -55,7 +55,6 @@ func (s *DriverLocationService) consumeDriverLocations() {
 		}
 
 		if location.Location.Latitude == 0 && location.Location.Longitude == 0 {
-			log.Print("Removing driver from cache")
 			if err := s.removeDriverFromCache(location.DriverID); err != nil {
 				log.Printf("Error removing driver from cache: %v", err)
 			}
@@ -106,7 +105,6 @@ func (s *DriverLocationService) consumeBookingNotifications() {
 		}
 
 		if notification.Status == "booked" {
-			log.Print("Transport booked, removing driver from cache")
 			if err := s.removeDriverFromCache(notification.DriverID); err != nil {
 				log.Printf("Error removing driver from cache: %v", err)
 			}
