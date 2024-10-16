@@ -206,6 +206,8 @@ func (s *NotificationService) consumeBookingNotifications() {
 				conn, ok := s.userConnections.Load(notification.UserID)
 				if ok {
 					_ = conn.(*websocket.Conn).WriteJSON(notification)
+				} else {
+					// log.Print("User connection not found")
 				}
 			} else if notification.Status == "completed" {
 				s.driverUserConnections.Delete(notification.DriverID)
