@@ -93,7 +93,8 @@ export default function UserDashboard() {
             latitude: response.data.booking.dropoff.latitude,
             longitude: response.data.booking.dropoff.longitude,
           }]);
-          setDriverName(response.data.booking.driver_id);
+          // setDriverName(response.data.booking.driver_id);
+          setDriverName(response.data.booking.driver_name);
           setStatus(response.data.booking.status);
           // start socket connection
           startSocketConnection();
@@ -144,6 +145,7 @@ export default function UserDashboard() {
           });
           setWaitingForDriver(false);
           setShowMap(true);
+          setDriverName(data.driver_name)
           toaster.positive("A driver has accepted your request!", {});
         }
         if (data.status === "completed") {
@@ -354,7 +356,7 @@ export default function UserDashboard() {
           </HeadingLevel>
           <Accordion>
             {bookingHistory.map((booking, index) => (
-              <Panel key={index} title={`Booking #${index + 1} - ${booking.status}`}>
+              <Panel key={index} title={`Booking #${index + 1} - ${booking.driver_name} - ${booking.status}`}>
                 <FlexGrid flexGridColumnCount={2} flexGridColumnGap="scale300" flexGridRowGap="scale300">
                   <FlexGridItem><strong>Price:</strong> ${booking.price}</FlexGridItem>
                   <FlexGridItem><strong>Status:</strong> <Tag closeable={false}>{booking.status}</Tag></FlexGridItem>

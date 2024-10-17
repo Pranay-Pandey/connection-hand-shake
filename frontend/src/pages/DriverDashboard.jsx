@@ -23,6 +23,7 @@ const DriverDashboard = () => {
   const [bookingRequest, setBookingRequest] = useState(null);
   const [journey, setJourney] = useState(false);
   const [userId, setUserId] = useState(null);
+  const [userName, setUserName] = useState(null);
   const [journeyStatus, setJourneyStatus] = useState([
     { label: 'Enroute to Pickup', id: 'enroute_to_pickup' },
   ]);
@@ -70,6 +71,7 @@ const DriverDashboard = () => {
         setJourneyStatus(statusOptions.filter((status) => status.id === data.status));
         setJourneyPickup(data.pickup);
         setJourneyDropoff(data.dropoff);
+        setUserName(data.user_name);
         toaster.positive("Journey in progress!", {});
       }
     } catch (error) {
@@ -155,6 +157,7 @@ const DriverDashboard = () => {
         setUserId(data.user_id);
         setJourneyPickup(bookingRequest.pickup);
         setJourneyDropoff(bookingRequest.dropoff);
+        setUserName(bookingRequest.user_name);
         // setJourneyPickup(data.pickup);
         // setJourneyDropoff(data.dropoff);
         toaster.positive("Booking confirmed successfully!", {});
@@ -202,7 +205,7 @@ const DriverDashboard = () => {
           <Heading styleLevel={3}>Current Journey</Heading>
         </HeadingLevel>
         <div className={css({ marginTop: theme.sizing.scale600 })}>
-          <p><strong>User ID:</strong> {userId}</p>
+          <p><strong>User Name:</strong> {userName}</p>
           <p><strong>Pickup:</strong> {journeyPickup.name}</p>
           <p><strong>Dropoff:</strong> {journeyDropoff.name}</p>
           <FormControl label="Update Journey Status">
@@ -267,7 +270,7 @@ const DriverDashboard = () => {
         ) : (
           <Accordion>
             {bookingHistory.map((booking, index) => (
-              <Panel key={index} title={`Booking #${index + 1} - ${booking.status}`}>
+              <Panel key={index} title={`Booking #${index + 1} - ${booking.user_name} - ${booking.status}`}>
                 <FlexGrid flexGridColumnCount={2} flexGridColumnGap="scale300" flexGridRowGap="scale300">
                   <FlexGridItem><strong>Price:</strong> ${booking.price}</FlexGridItem>
                   <FlexGridItem><strong>Status:</strong> <Tag closeable={false}>{booking.status}</Tag></FlexGridItem>
