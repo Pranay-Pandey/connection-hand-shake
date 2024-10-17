@@ -30,9 +30,10 @@ type BookingNotification struct {
 }
 
 type BookedNotification struct {
-	UserID   string `json:"user_id"`
-	DriverID string `json:"driver_id"`
-	Status   string `json:"status"`
+	UserID     string `json:"user_id"`
+	DriverID   string `json:"driver_id"`
+	DriverName string `json:"driver_name"`
+	Status     string `json:"status"`
 }
 
 type UserRequest struct {

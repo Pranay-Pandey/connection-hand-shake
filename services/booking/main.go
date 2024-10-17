@@ -45,7 +45,9 @@ type BookingService struct {
 type Booking struct {
 	ID          int32          `json:"id"`
 	UserID      int32          `json:"user_id"`
+	UserName    string         `json:"user_name"`
 	DriverID    int32          `json:"driver_id"`
+	DriverName  string         `json:"driver_name"`
 	Price       float64        `json:"price"`
 	Pickup      utils.GeoPoint `json:"pickup"`
 	Dropoff     utils.GeoPoint `json:"dropoff"`
@@ -57,6 +59,7 @@ type Booking struct {
 type BookingConfirmation struct {
 	BookingReq utils.BookingRequest `json:"booking_request"`
 	DriverID   string               `json:"driver_id"`
+	DriverName string               `json:"driver_name"`
 }
 
 func main() {
@@ -245,7 +248,7 @@ func (s *BookingService) handleBookingUpdate(c *gin.Context) {
 		}
 	}
 
-	go s.produceBookingEvent(userID, driver.UserID, booking.Status)
+	go s.produceBookingEvent(userID, driver.UserID, driver.UserName, booking.Status)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Booking updated"})
 }
@@ -284,6 +287,7 @@ func (s *BookingService) handleBookingAccept(c *gin.Context) {
 	}
 
 	bookConReq.DriverID = driver.UserID
+	bookConReq.DriverName = driver.UserName
 
 	// delete the booking request
 	if _, err := collection.DeleteOne(context.Background(), bson.M{"_id": objectID}); err != nil {
@@ -308,15 +312,16 @@ func (s *BookingService) processBooked(bookConReq BookingConfirmation) error {
 		return fmt.Errorf("error storing booking: %w", err)
 	}
 
-	go s.produceBookingEvent(bookingReq.UserID, bookConReq.DriverID, "booked")
+	go s.produceBookingEvent(bookingReq.UserID, bookConReq.DriverID, bookConReq.DriverName, "booked")
 	return nil
 }
 
-func (s *BookingService) produceBookingEvent(userID, driverID, status string) {
+func (s *BookingService) produceBookingEvent(userID, driverID, driverName, status string) {
 	bookingEvent := utils.BookedNotification{
-		UserID:   userID,
-		DriverID: driverID,
-		Status:   status,
+		UserID:     userID,
+		DriverID:   driverID,
+		DriverName: driverName,
+		Status:     status,
 	}
 
 	bookingEventJSON, err := json.Marshal(bookingEvent)
@@ -453,8 +458,8 @@ func (s *BookingService) handleUserBookingCheck(c *gin.Context) {
 	// Check if the user has any booking made in PostgreSQL where status is not completed or cancelled
 	var booking Booking
 	err = s.PostgreSQLConn.QueryRow(context.Background(),
-		"SELECT user_id, driver_id, price, pickup_latitude, pickup_longitude, dropoff_latitude, dropoff_longitude, created_at, status, pickup_name, dropoff_name FROM booking WHERE user_id = $1 AND status != $2 AND status != $3",
-		userId, "completed", "cancelled").Scan(&booking.UserID, &booking.DriverID, &booking.Price, &booking.Pickup.Latitude, &booking.Pickup.Longitude, &booking.Dropoff.Latitude, &booking.Dropoff.Longitude, &booking.BookedAt, &booking.Status, &booking.Pickup.Name, &booking.Dropoff.Name)
+		"SELECT b.user_id, b.driver_id, b.price, b.pickup_latitude, b.pickup_longitude, b.dropoff_latitude, b.dropoff_longitude, b.created_at, b.status, b.pickup_name, b.dropoff_name, d.name FROM booking b INNER JOIN vehicle_drivers d ON d.id=b.driver_id WHERE b.user_id=$1 AND status!=$2 AND status != $3",
+		userId, "completed", "cancelled").Scan(&booking.UserID, &booking.DriverID, &booking.Price, &booking.Pickup.Latitude, &booking.Pickup.Longitude, &booking.Dropoff.Latitude, &booking.Dropoff.Longitude, &booking.BookedAt, &booking.Status, &booking.Pickup.Name, &booking.Dropoff.Name, &booking.DriverName)
 
 	if err == pgx.ErrNoRows {
 		c.JSON(http.StatusNotFound, gin.H{"error": "no booking found"})
@@ -478,7 +483,7 @@ func (s *BookingService) handleUserBookingHistory(c *gin.Context) {
 	user, _ := authUser.(utils.UserRequest)
 
 	// check if the user has any booking made which is in postgres
-	rows, err := s.PostgreSQLConn.Query(context.Background(), "SELECT user_id, driver_id, price, pickup_latitude, pickup_longitude, dropoff_latitude, dropoff_longitude, created_at, completed_at, status, pickup_name, dropoff_name FROM booking WHERE user_id = $1", user.UserID)
+	rows, err := s.PostgreSQLConn.Query(context.Background(), "SELECT b.user_id, b.driver_id, b.price, b.pickup_latitude, b.pickup_longitude, b.dropoff_latitude, b.dropoff_longitude, b.created_at, b.completed_at, b.status, b.pickup_name, b.dropoff_name, d.name FROM booking b INNER JOIN vehicle_drivers d on d.id=b.driver_id WHERE user_id=$1", user.UserID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "error fetching booking history", "err": err})
 		return
@@ -489,7 +494,7 @@ func (s *BookingService) handleUserBookingHistory(c *gin.Context) {
 	for rows.Next() {
 		var booking Booking
 		completedAt := new(time.Time)
-		if err := rows.Scan(&booking.UserID, &booking.DriverID, &booking.Price, &booking.Pickup.Latitude, &booking.Pickup.Longitude, &booking.Dropoff.Latitude, &booking.Dropoff.Longitude, &booking.BookedAt, &completedAt, &booking.Status, &booking.Pickup.Name, &booking.Dropoff.Name); err != nil {
+		if err := rows.Scan(&booking.UserID, &booking.DriverID, &booking.Price, &booking.Pickup.Latitude, &booking.Pickup.Longitude, &booking.Dropoff.Latitude, &booking.Dropoff.Longitude, &booking.BookedAt, &completedAt, &booking.Status, &booking.Pickup.Name, &booking.Dropoff.Name, &booking.DriverName); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "error reading booking history",
 				"err": err})
 			return
@@ -525,8 +530,8 @@ func (s *BookingService) handleDriverBookingCheck(c *gin.Context) {
 	// Check if the user has any booking made in PostgreSQL where status is not completed or cancelled
 	var booking Booking
 	err = s.PostgreSQLConn.QueryRow(context.Background(),
-		"SELECT user_id, driver_id, price, pickup_latitude, pickup_longitude, dropoff_latitude, dropoff_longitude, created_at, status, pickup_name, dropoff_name FROM booking WHERE driver_id = $1 AND status != $2 AND status != $3",
-		driverID, "completed", "cancelled").Scan(&booking.UserID, &booking.DriverID, &booking.Price, &booking.Pickup.Latitude, &booking.Pickup.Longitude, &booking.Dropoff.Latitude, &booking.Dropoff.Longitude, &booking.BookedAt, &booking.Status, &booking.Pickup.Name, &booking.Dropoff.Name)
+		"SELECT b.user_id, b.driver_id, b.price, b.pickup_latitude, b.pickup_longitude, b.dropoff_latitude, b.dropoff_longitude, b.created_at, b.status, b.pickup_name, b.dropoff_name, u.name FROM booking b INNER JOIN users u ON u.id=b.user_id WHERE driver_id=$1 AND status!=$2 AND status!=$3",
+		driverID, "completed", "cancelled").Scan(&booking.UserID, &booking.DriverID, &booking.Price, &booking.Pickup.Latitude, &booking.Pickup.Longitude, &booking.Dropoff.Latitude, &booking.Dropoff.Longitude, &booking.BookedAt, &booking.Status, &booking.Pickup.Name, &booking.Dropoff.Name, &booking.UserName)
 
 	if err == pgx.ErrNoRows {
 		c.JSON(http.StatusNotFound, gin.H{"error": "no booking found"})
@@ -550,7 +555,7 @@ func (s *BookingService) handleDriverBookingHistory(c *gin.Context) {
 	driver, _ := authDriver.(utils.UserRequest)
 
 	// check if the driver has any booking made which is in postgres
-	rows, err := s.PostgreSQLConn.Query(context.Background(), "SELECT user_id, driver_id, price, pickup_latitude, pickup_longitude, dropoff_latitude, dropoff_longitude, created_at, completed_at, status, pickup_name, dropoff_name FROM booking WHERE driver_id = $1", driver.UserID)
+	rows, err := s.PostgreSQLConn.Query(context.Background(), "SELECT b.user_id, b.driver_id, b.price, b.pickup_latitude, b.pickup_longitude, b.dropoff_latitude, b.dropoff_longitude, b.created_at, b.completed_at, b.status, b.pickup_name, b.dropoff_name, u.name FROM booking b INNER JOIN users u on u.id=b.user_id WHERE driver_id=$1", driver.UserID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "error fetching booking history"})
 		return
@@ -561,7 +566,7 @@ func (s *BookingService) handleDriverBookingHistory(c *gin.Context) {
 	for rows.Next() {
 		var booking Booking
 		completedAt := new(time.Time)
-		if err := rows.Scan(&booking.UserID, &booking.DriverID, &booking.Price, &booking.Pickup.Latitude, &booking.Pickup.Longitude, &booking.Dropoff.Latitude, &booking.Dropoff.Longitude, &booking.BookedAt, &completedAt, &booking.Status, &booking.Pickup.Name, &booking.Dropoff.Name); err != nil {
+		if err := rows.Scan(&booking.UserID, &booking.DriverID, &booking.Price, &booking.Pickup.Latitude, &booking.Pickup.Longitude, &booking.Dropoff.Latitude, &booking.Dropoff.Longitude, &booking.BookedAt, &completedAt, &booking.Status, &booking.Pickup.Name, &booking.Dropoff.Name, &booking.UserName); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "error fetching booking history"})
 			return
 		}
