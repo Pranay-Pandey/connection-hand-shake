@@ -61,7 +61,7 @@ export default function UserDashboard() {
         if (response?.data?.booking_request) {
           setWaitingForDriver(true);
           // set current time for now
-          setBookingTime(new Date());
+          setBookingTime(response.data.booking_request.created_at);
           setVehicleType(response.data.booking_request.vehicle_type);
           setPickup([{
             id: response.data.booking_request.pickup.name,
@@ -74,6 +74,14 @@ export default function UserDashboard() {
             longitude: response.data.booking_request.dropoff.longitude,
           }]);
           setPrice(response.data.booking_request.price.toFixed(2));
+
+          // add a timeout of 10 minutes after the response.data.booking_request.created_at time to reset the states because after 10 minutes, the request will be expired
+          const currentTime = new Date();
+          const timeDiff = currentTime - new Date(response.data.booking_request.created_at);
+          const timeRemaining = 10 * 60 * 1000 - timeDiff;
+          setTimeout(() => {
+            resetStates();
+          }, timeRemaining);
         }
         else if (response?.data?.booking) {
           setWaitingForDriver(false);
@@ -136,7 +144,7 @@ export default function UserDashboard() {
       const data = JSON.parse(event.data);
       console.log("Received data:", data);
       if (data.status) {
-        setDriverName(data.driver_id);
+        // setDriverName(data.driver_id);
         setStatus(data.status);
         if (data.status === "booked") {
           setDriverLocation({
