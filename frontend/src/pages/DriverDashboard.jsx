@@ -12,7 +12,7 @@ import { Tabs, Tab } from "baseui/tabs-motion";
 import { Accordion, Panel } from "baseui/accordion";
 import { ProgressBar } from "baseui/progress-bar";
 import Navbar from '../components/Navbar';
-import { confirmBooking, updateBookingStatus, getDriverBookingHistory } from '../services/api';
+import { confirmBooking, updateBookingStatus, getDriverBookingHistory, getCurrentDriverBooking } from '../services/api';
 
 const DriverDashboard = () => {
   const [css, theme] = useStyletron();
@@ -32,6 +32,16 @@ const DriverDashboard = () => {
     { label: 'Completed', id: 'completed' },
   ]);
   const [bookingHistory, setBookingHistory] = useState([]);
+  const [journeyPickup, setJourneyPickup] = useState({
+    name: "Pickup Location",
+    latitude: 0,
+    longitude: 0,
+  });
+  const [journeyDropoff, setJourneyDropoff] = useState({
+    name: "Dropoff Location",
+    latitude: 0,
+    longitude: 0,
+  });
 
   const token = localStorage.getItem('token');
   const driverID = localStorage.getItem('driverID');
@@ -47,7 +57,26 @@ const DriverDashboard = () => {
   useEffect(() => {
     startCommunication();
     fetchBookingHistory();
+    fetchCurrentBooking();
   }, []);
+
+  const fetchCurrentBooking = async () => {
+    try {
+      const response = await getCurrentDriverBooking();
+      if (response.status === 200 && response.data.booking) {
+        const data = response.data.booking;
+        setJourney(true);
+        setUserId(data.user_id);
+        setJourneyStatus(statusOptions.filter((status) => status.id === data.status));
+        setJourneyPickup(data.pickup);
+        setJourneyDropoff(data.dropoff);
+        toaster.positive("Journey in progress!", {});
+      }
+    } catch (error) {
+      toaster.negative("Error fetching current booking.", {});
+    }
+  };
+
 
   const startCommunication = useCallback(() => {
     if (!driverID) {
@@ -124,6 +153,10 @@ const DriverDashboard = () => {
         const data = response.data;
         setJourney(true);
         setUserId(data.user_id);
+        setJourneyPickup(bookingRequest.pickup);
+        setJourneyDropoff(bookingRequest.dropoff);
+        // setJourneyPickup(data.pickup);
+        // setJourneyDropoff(data.dropoff);
         toaster.positive("Booking confirmed successfully!", {});
       }
     } catch (error) {
@@ -170,6 +203,8 @@ const DriverDashboard = () => {
         </HeadingLevel>
         <div className={css({ marginTop: theme.sizing.scale600 })}>
           <p><strong>User ID:</strong> {userId}</p>
+          <p><strong>Pickup:</strong> {journeyPickup.name}</p>
+          <p><strong>Dropoff:</strong> {journeyDropoff.name}</p>
           <FormControl label="Update Journey Status">
             <Select
               options={statusOptions}

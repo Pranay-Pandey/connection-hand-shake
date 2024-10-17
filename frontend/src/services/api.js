@@ -75,6 +75,8 @@ export const confirmBooking = (bookingId) => bookingApi.post(`/booking/accept`, 
 export const updateBookingStatus = (userId, bookingData) => bookingApi.patch(`/booking/${userId}`, bookingData)
 export const getUserBookingHistory = () => bookingApi.get('/user/booking-history')
 export const getDriverBookingHistory = () => bookingApi.get('/driver/booking-history')
+export const getCurrentUserBooking = () => bookingApi.get('/user/booking')
+export const getCurrentDriverBooking = () => bookingApi.get('/driver/booking')
 
 export const getFleetStats = () => adminApi.get('/fleet-stats')
 export const getDriverPerformance = () => adminApi.get('/driver-performance')

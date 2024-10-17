@@ -14,7 +14,7 @@ import { Tabs, Tab } from "baseui/tabs-motion";
 import { ProgressBar } from "baseui/progress-bar";
 import Navbar from "../components/Navbar";
 import TrackingMap from "../components/TrackingMap";
-import { makeBooking, getPrice, getUserBookingHistory, getLocationCoordinates } from "../services/api";
+import { makeBooking, getPrice, getUserBookingHistory, getLocationCoordinates, getCurrentUserBooking } from "../services/api";
 import _ from "lodash";
 
 export default function UserDashboard() {
@@ -55,7 +55,56 @@ export default function UserDashboard() {
         toaster.negative("Error fetching booking history.", {});
       }
     };
+    const checkPrevBooking = async () => {
+      try {
+        const response = await getCurrentUserBooking();
+        if (response?.data?.booking_request) {
+          setWaitingForDriver(true);
+          // set current time for now
+          setBookingTime(new Date());
+          setVehicleType(response.data.booking_request.vehicle_type);
+          setPickup([{
+            id: response.data.booking_request.pickup.name,
+            latitude: response.data.booking_request.pickup.latitude,
+            longitude: response.data.booking_request.pickup.longitude,
+          }]);
+          setDropoff([{
+            id: response.data.booking_request.dropoff.name,
+            latitude: response.data.booking_request.dropoff.latitude,
+            longitude: response.data.booking_request.dropoff.longitude,
+          }]);
+          setPrice(response.data.booking_request.price.toFixed(2));
+        }
+        else if (response?.data?.booking) {
+          setWaitingForDriver(false);
+          setShowMap(true);
+          setDriverLocation({
+            latitude: parseFloat(response.data.booking.pickup.latitude),
+            longitude: parseFloat(response.data.booking.pickup.longitude),
+          });
+          setVehicleType(response.data.booking.vehicle_type);
+          setPickup([{
+            id: response.data.booking.pickup.name,
+            latitude: response.data.booking.pickup.latitude,
+            longitude: response.data.booking.pickup.longitude,
+          }]);
+          setDropoff([{
+            id: response.data.booking.dropoff.name,
+            latitude: response.data.booking.dropoff.latitude,
+            longitude: response.data.booking.dropoff.longitude,
+          }]);
+          setDriverName(response.data.booking.driver_id);
+          setStatus(response.data.booking.status);
+          // start socket connection
+          startSocketConnection();
+
+        }
+      } catch (error) {
+        console.log("Error fetching previous booking:", error);
+      }
+    }
     fetchBookingHistory();
+    checkPrevBooking();
   }, []);
 
 
