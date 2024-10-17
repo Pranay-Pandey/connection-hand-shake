@@ -5,6 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"logistics-platform/lib/config"
+	"logistics-platform/lib/database"
+	kafkaConfig "logistics-platform/lib/kafka"
 	"logistics-platform/lib/utils"
 	"time"
 
@@ -19,19 +22,19 @@ type DriverLocationService struct {
 }
 
 func main() {
-	if err := utils.LoadConfig(); err != nil {
+	if err := config.LoadConfig(); err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	redisClient, err := utils.InitRedis()
+	redisClient, err := database.InitRedis()
 	if err != nil {
 		log.Fatalf("Failed to connect to Redis: %v", err)
 	}
 
 	service := &DriverLocationService{
 		redisClient:            redisClient,
-		kafkaReader:            utils.InitKafkaReader("driver_locations", "driver-location-service"),
-		bookNotificationReader: utils.InitKafkaReader("booking_notifications", "driver_location_service_group"),
+		kafkaReader:            kafkaConfig.InitKafkaReader("driver_locations", "driver-location-service"),
+		bookNotificationReader: kafkaConfig.InitKafkaReader("booking_notifications", "driver_location_service_group"),
 	}
 
 	go service.consumeDriverLocations()

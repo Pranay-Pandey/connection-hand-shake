@@ -14,6 +14,9 @@ import (
 	"syscall"
 	"time"
 
+	"logistics-platform/lib/config"
+	"logistics-platform/lib/database"
+	kafkaConfig "logistics-platform/lib/kafka"
 	"logistics-platform/lib/middlewares/auth"
 	"logistics-platform/lib/middlewares/cors"
 	"logistics-platform/lib/utils"
@@ -57,22 +60,22 @@ type BookingConfirmation struct {
 }
 
 func main() {
-	if err := utils.LoadConfig(); err != nil {
+	if err := config.LoadConfig(); err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	mongoClient, err := utils.InitMongoDB()
+	mongoClient, err := database.InitMongoDB()
 	defer mongoClient.Disconnect(context.Background())
 	if err != nil {
 		log.Fatalf("Failed to connect to MongoDB: %v", err)
 	}
 
-	redisClient, err := utils.InitRedis()
+	redisClient, err := database.InitRedis()
 	if err != nil {
 		log.Fatalf("Failed to connect to Redis: %v", err)
 	}
 
-	poolConfig, err := pgxpool.ParseConfig(utils.GetDBConnectionString())
+	poolConfig, err := pgxpool.ParseConfig(config.GetDBConnectionString())
 	if err != nil {
 		log.Fatalf("Failed to parse pool config: %v", err)
 	}
@@ -90,10 +93,10 @@ func main() {
 
 	service := &BookingService{
 		mongoClient:        mongoClient,
-		notificationWriter: utils.InitKafkaWriter("driver_notification"),
+		notificationWriter: kafkaConfig.InitKafkaWriter("driver_notification"),
 		redisClient:        redisClient,
 		PostgreSQLConn:     pool,
-		bookingWriter:      utils.InitKafkaWriter("booking_notifications"),
+		bookingWriter:      kafkaConfig.InitKafkaWriter("booking_notifications"),
 		shutdown:           make(chan struct{}),
 	}
 

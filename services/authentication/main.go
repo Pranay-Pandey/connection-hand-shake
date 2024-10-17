@@ -1,30 +1,39 @@
 package main
 
 import (
+	"log"
+	"logistics-platform/lib/config"
 	"logistics-platform/lib/database"
 	"logistics-platform/lib/middlewares/cors"
-	"logistics-platform/services/authentication/routers"
+	"logistics-platform/services/authentication/router"
+	"logistics-platform/services/authentication/service"
 
 	"github.com/gin-gonic/gin"
-	"github.com/spf13/viper"
 )
 
 func main() {
-	router := gin.Default()
-	router.Use(cors.CORSMiddleware())
-
-	// Load environment variables
-	viper.SetConfigFile(".env")
-	viper.ReadInConfig()
+	// Load configuration
+	if err := config.LoadConfig(); err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
+	}
 
 	// Initialize the database connection
-	database.InitPostgres()
+	db, err := database.NewPostgresDB()
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer db.Close(nil)
 
-	// Register user routes
-	routers.RegisterUserRoutes(router)
-	routers.RegisterDriverRoutes(router)
-	routers.RegisterAdminRoutes(router)
+	// Create a new instance of the auth service
+	authService := service.NewAuthService(db)
 
-	// Run the user service on a specific port
-	router.Run(":8081")
+	// Setup the router
+	r := gin.Default()
+	r.Use(cors.CORSMiddleware())
+	router.SetupRouter(r, authService)
+
+	// Run the service
+	if err := r.Run(":8081"); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 }

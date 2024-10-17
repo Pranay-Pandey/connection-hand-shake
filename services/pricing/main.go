@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"time"
 
+	"logistics-platform/lib/config"
+	"logistics-platform/lib/database"
 	"logistics-platform/lib/utils"
 
 	"github.com/redis/go-redis/v9"
@@ -72,16 +74,16 @@ var vehiclePricingData = map[string]VehiclePricing{
 }
 
 func main() {
-	if err := utils.LoadConfig(); err != nil {
+	if err := config.LoadConfig(); err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	redisClient, err := utils.InitRedis()
+	redisClient, err := database.InitRedis()
 	if err != nil {
 		log.Fatalf("Failed to connect to Redis: %v", err)
 	}
 
-	poolConfig, err := pgxpool.ParseConfig(utils.GetDBConnectionString())
+	poolConfig, err := pgxpool.ParseConfig(config.GetDBConnectionString())
 	if err != nil {
 		log.Fatalf("Failed to parse pool config: %v", err)
 	}

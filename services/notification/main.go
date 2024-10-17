@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"logistics-platform/lib/config"
+	kafkaConfig "logistics-platform/lib/kafka"
 	"logistics-platform/lib/middlewares/cors"
 	"logistics-platform/lib/token"
 	"logistics-platform/lib/utils"
@@ -36,14 +38,14 @@ type NotificationService struct {
 }
 
 func main() {
-	if err := utils.LoadConfig(); err != nil {
+	if err := config.LoadConfig(); err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
 	service := &NotificationService{
-		locationWriter:         utils.InitKafkaWriter("driver_locations"),
-		notificationReader:     utils.InitKafkaReader("driver_notification", "driver_notification"),
-		bookNotificationReader: InitKafkaReader("booking_notifications", "notification_service_group"),
+		locationWriter:         kafkaConfig.InitKafkaWriter("driver_locations"),
+		notificationReader:     kafkaConfig.InitKafkaReader("driver_notification", "driver_notification"),
+		bookNotificationReader: kafkaConfig.InitKafkaReader("booking_notifications", "notification_service_group"),
 		shutdown:               make(chan struct{}),
 	}
 
@@ -126,18 +128,6 @@ func main() {
 
 	log.Println("Server exiting")
 	os.Exit(0)
-}
-
-// Update the InitKafkaReader function in your utils package
-func InitKafkaReader(topic, groupID string) *kafka.Reader {
-	return kafka.NewReader(kafka.ReaderConfig{
-		Brokers:        []string{"localhost:9092"}, // Replace with your Kafka broker addresses
-		Topic:          topic,
-		GroupID:        groupID,
-		MinBytes:       10e3,
-		MaxBytes:       10e6,
-		CommitInterval: time.Second,
-	})
 }
 
 func (s *NotificationService) consumeNotifications() {

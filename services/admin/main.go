@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"logistics-platform/lib/config"
 	"logistics-platform/lib/middlewares/cors"
 	"logistics-platform/lib/models"
 	"logistics-platform/lib/utils"
@@ -84,11 +85,11 @@ func (c *Cache) Get(key string) (interface{}, bool) {
 }
 
 func main() {
-	if err := utils.LoadConfig(); err != nil {
+	if err := config.LoadConfig(); err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	poolConfig, err := pgxpool.ParseConfig(utils.GetDBConnectionString())
+	poolConfig, err := pgxpool.ParseConfig(config.GetDBConnectionString())
 	if err != nil {
 		log.Fatalf("Failed to parse pool config: %v", err)
 	}
