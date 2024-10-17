@@ -42,13 +42,14 @@ type UserRequest struct {
 }
 
 type BookingRequest struct {
-	UserID      string   `json:"user_id" bson:"user_id"`
-	UserName    string   `json:"user_name" bson:"user_name"`
-	Pickup      GeoPoint `json:"pickup" bson:"pickup"`
-	Dropoff     GeoPoint `json:"dropoff" bson:"dropoff"`
-	VehicleType string   `json:"vehicle_type" bson:"vehicle_type"`
-	Price       float64  `json:"price" bson:"price"`
-	MongoID     string   `json:"mongo_id" bson:"mongo_id"`
+	UserID      string    `json:"user_id" bson:"user_id"`
+	UserName    string    `json:"user_name" bson:"user_name"`
+	Pickup      GeoPoint  `json:"pickup" bson:"pickup"`
+	Dropoff     GeoPoint  `json:"dropoff" bson:"dropoff"`
+	VehicleType string    `json:"vehicle_type" bson:"vehicle_type"`
+	Price       float64   `json:"price" bson:"price"`
+	MongoID     string    `json:"mongo_id,omitempty" bson:"mongo_id,omitempty"`
+	CreatedAt   time.Time `json:"created_at" bson:"created_at"`
 }
 
 func WaitForShutdown(closers ...interface{ Close() error }) {

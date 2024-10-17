@@ -360,6 +360,8 @@ func (s *BookingService) handleBookingRequest(c *gin.Context) {
 }
 
 func (s *BookingService) processBookingRequest(bookingReq utils.BookingRequest) error {
+	bookingReq.CreatedAt = time.Now()
+
 	collection := s.mongoClient.Database("logistics").Collection("booking_requests")
 	res, err := collection.InsertOne(context.Background(), bookingReq)
 	if err != nil {
@@ -369,41 +371,39 @@ func (s *BookingService) processBookingRequest(bookingReq utils.BookingRequest) 
 	newBookingMongoID := res.InsertedID.(primitive.ObjectID).Hex()
 	bookingReq.MongoID = newBookingMongoID
 
-	nearbyDrivers, err := s.findNearbyDrivers(bookingReq, bookingReq.VehicleType)
-	if err != nil {
-		return fmt.Errorf("error finding nearby drivers: %w", err)
-	}
-
-	for _, driverID := range nearbyDrivers {
-		go func(driverID string) {
-			if err := s.notifyDriver(driverID, bookingReq); err != nil {
-				log.Printf("Error notifying driver %s: %v", driverID, err)
-			}
-		}(driverID)
-	}
-
-	return nil
+	return s.findAndNotifyNearbyDrivers(bookingReq, bookingReq.VehicleType)
 }
 
-func (s *BookingService) findNearbyDrivers(bookingReq utils.BookingRequest, vehicleType string) ([]string, error) {
+func (s *BookingService) findAndNotifyNearbyDrivers(bookingReq utils.BookingRequest, vehicleType string) error {
 	pickup := bookingReq.Pickup
 	drivers, err := s.redisClient.GeoRadius(context.Background(), "driver_locations", pickup.Longitude, pickup.Latitude, &redis.GeoRadiusQuery{
 		Radius: 1000,
 		Unit:   "km",
 	}).Result()
 	if err != nil {
-		return nil, fmt.Errorf("error finding nearby drivers: %w", err)
+		return fmt.Errorf("error finding nearby drivers: %w", err)
 	}
 
-	var nearbyDrivers []string
 	for _, driver := range drivers {
 		go func(driverID string) {
+
+			// check if the driver has the same vehicle type
+			driverVehicleType, err := s.getVehicleType(driverID)
+			if err != nil {
+				log.Printf("Error getting vehicle type for driver %s: %v", driverID, err)
+				return
+			}
+
+			if driverVehicleType != vehicleType {
+				return
+			}
+
 			if err := s.notifyDriver(driverID, bookingReq); err != nil {
 				log.Printf("Error notifying driver %s: %v", driverID, err)
 			}
 		}(driver.Name)
 	}
-	return nearbyDrivers, nil
+	return nil
 }
 
 func (s *BookingService) notifyDriver(driverID string, bookingReq utils.BookingRequest) error {
@@ -583,3 +583,42 @@ func (s *BookingService) handleDriverBookingHistory(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"bookings": bookings})
 }
+
+func (s *BookingService) getVehicleType(driverID string) (string, error) {
+	// check if redis has the vehicle type using key driverId-veh: type
+	vehicleType, err := s.redisClient.Get(context.Background(), driverID+"-veh").Result()
+	// if error is nill and vehicle type is not empty, return the vehicle type
+	if err == nil && vehicleType != "" {
+		return vehicleType, nil
+	}
+
+	// if vehicle type is not found in redis, fetch it from postgres
+	if vehicleType == "" {
+		err := s.PostgreSQLConn.QueryRow(context.Background(), "SELECT vehicle_type FROM vehicle_drivers WHERE id=$1", driverID).Scan(&vehicleType)
+		if err != nil {
+			return "", fmt.Errorf("error fetching vehicle type: %w", err)
+		}
+	}
+
+	if vehicleType == "" {
+		return "", fmt.Errorf("vehicle type not found")
+	}
+
+	expiration := 1 * time.Hour
+	// set the vehicle type in redis
+	_ = s.redisClient.Set(context.Background(), driverID+"-veh", vehicleType, expiration).Err()
+
+	return vehicleType, nil
+}
+
+// func createTTLIndex(collection *mongo.Collection) error {
+// 	indexModel := mongo.IndexModel{
+// 		Keys: bson.D{
+// 			{Key: "created_at", Value: 1}, // Create index on CreatedAt
+// 		},
+// 		Options: options.Index().SetExpireAfterSeconds(600), // time in seconds
+// 	}
+
+// 	_, err := collection.Indexes().CreateOne(context.Background(), indexModel)
+// 	return err
+// }
