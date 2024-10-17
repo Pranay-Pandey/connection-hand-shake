@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"logistics-platform/lib/config"
+	"logistics-platform/lib/database"
 	"logistics-platform/lib/middlewares/cors"
 	"logistics-platform/lib/models"
 	"logistics-platform/lib/utils"
@@ -16,11 +17,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgtype"
 	"github.com/jackc/pgx/v4/pgxpool"
+
+	"github.com/redis/go-redis/v9"
 )
 
 type AdminService struct {
-	pool  *pgxpool.Pool
-	cache *Cache
+	redisClient *redis.Client
+	pool        *pgxpool.Pool
+	cache       *Cache
 }
 
 type FleetStats struct {
@@ -105,9 +109,15 @@ func main() {
 	}
 	defer pool.Close()
 
+	redisClient, err := database.InitRedis()
+	if err != nil {
+		log.Fatalf("Failed to connect to Redis: %v", err)
+	}
+
 	service := &AdminService{
-		pool:  pool,
-		cache: NewCache(),
+		pool:        pool,
+		redisClient: redisClient,
+		cache:       NewCache(),
 	}
 
 	router := gin.Default()
@@ -283,7 +293,7 @@ func (s *AdminService) getVehicleLocations(c *gin.Context) {
 	defer cancel()
 
 	type VehicleLocation struct {
-		ID          int     `json:"id"`
+		ID          int32   `json:"id"`
 		Name        string  `json:"name"`
 		VehicleType string  `json:"vehicleType"`
 		Latitude    float64 `json:"latitude"`
@@ -332,6 +342,19 @@ func (s *AdminService) getVehicleLocations(c *gin.Context) {
 				}
 			} else {
 				loc.Status = "idle"
+			}
+			// Get driver location
+			driverID := fmt.Sprintf("%d", loc.ID)
+			driverPos, err := s.redisClient.GeoPos(context.Background(), "driver_locations", driverID).Result()
+			if err == nil && len(driverPos) > 0 {
+				if driverPos != nil && driverPos[0] != nil {
+					loc.Latitude = driverPos[0].Latitude
+					loc.Longitude = driverPos[0].Longitude
+				}
+			}
+
+			if loc.Latitude == 0 && loc.Longitude == 0 {
+				loc.Status = "offline"
 			}
 			locations = append(locations, loc)
 		}
