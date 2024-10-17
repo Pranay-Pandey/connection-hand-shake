@@ -1,19 +1,25 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { FormControl } from "baseui/form-control";
-import { Input } from "baseui/input";
 import { Button } from "baseui/button";
 import { Heading, HeadingLevel } from "baseui/heading";
 import { useStyletron } from "baseui";
 import { ToasterContainer, toaster } from "baseui/toast";
-import Navbar from "../components/Navbar";
-import { makeBooking, getPrice, getUserBookingHistory, getLocationName, getLocationCoordinates } from "../services/api";
 import { Select, TYPE } from "baseui/select";
-import _ from "lodash";
+import { Accordion, Panel } from "baseui/accordion";
+import { Card, StyledBody } from "baseui/card";
+import { FlexGrid, FlexGridItem } from "baseui/flex-grid";
+import { Spinner } from "baseui/spinner";
+import { Tag } from "baseui/tag";
+import { Tabs, Tab } from "baseui/tabs-motion";
+import { ProgressBar } from "baseui/progress-bar";
+import Navbar from "../components/Navbar";
 import TrackingMap from "../components/TrackingMap";
-import { Accordion, Panel } from "baseui/accordion"; 
+import { makeBooking, getPrice, getUserBookingHistory, getLocationCoordinates } from "../services/api";
+import _ from "lodash";
 
 export default function UserDashboard() {
-  const [css] = useStyletron();
+  const [css, theme] = useStyletron();
+  const [activeTab, setActiveTab] = useState("0");
   const [vehicleType, setVehicleType] = useState('');
   const [price, setPrice] = useState('');
   const [isConnected, setIsConnected] = useState(false);
@@ -21,10 +27,7 @@ export default function UserDashboard() {
   const [dropoffOptions, setDropoffOptions] = useState([]);
   const [pickup, setPickup] = useState([]);
   const [dropoff, setDropoff] = useState([]);
-  const [driverLocation, setDriverLocation] = useState({
-    latitude: null,
-    longitude: null,
-  });
+  const [driverLocation, setDriverLocation] = useState({ latitude: null, longitude: null });
   const [showMap, setShowMap] = useState(false);
   const [loadingPrice, setLoadingPrice] = useState(false);
   const [vehicleOptions, setVehicleOptions] = useState([
@@ -36,12 +39,13 @@ export default function UserDashboard() {
   ]);
   const [driverName, setDriverName] = useState('');
   const [status, setStatus] = useState('');
-  const [bookingHistory, setBookingHistory] = useState([]); 
+  const [bookingHistory, setBookingHistory] = useState([]);
+  const [waitingForDriver, setWaitingForDriver] = useState(false);
+  const [bookingTime, setBookingTime] = useState(null);
 
   const debouncedFetchPickup = useCallback(_.debounce((query) => fetchLocations(query, setPickupOptions), 500), []);
   const debouncedFetchDropoff = useCallback(_.debounce((query) => fetchLocations(query, setDropoffOptions), 500), []);
 
-  // Fetch booking history on mount
   useEffect(() => {
     const fetchBookingHistory = async () => {
       try {
@@ -53,6 +57,7 @@ export default function UserDashboard() {
     };
     fetchBookingHistory();
   }, []);
+
 
   const fetchLocations = async (query, setOptions) => {
     if (query.length < 3) return;
@@ -74,7 +79,7 @@ export default function UserDashboard() {
     const socket = new WebSocket(`ws://localhost:8080/user/ws`);
     socket.onopen = () => {
       setIsConnected(true);
-      toaster.info("Made a booking.", {});
+      toaster.info("Connected. Waiting for a driver to accept your request.", {});
       socket.send(JSON.stringify({ token: localStorage.getItem('token') }));
     };
     socket.onmessage = (event) => {
@@ -83,41 +88,42 @@ export default function UserDashboard() {
       if (data.status) {
         setDriverName(data.driver_id);
         setStatus(data.status);
-        if (data.status === "booked") { 
+        if (data.status === "booked") {
           setDriverLocation({
             latitude: parseFloat(pickup[0].latitude),
             longitude: parseFloat(pickup[0].longitude),
           });
+          setWaitingForDriver(false);
+          setShowMap(true);
+          toaster.positive("A driver has accepted your request!", {});
         }
-
-        if (!showMap) setShowMap(true);
         if (data.status === "completed") {
           toaster.positive("Booking completed. Thank you for using our service.", {});
-          setShowMap(false);
-          // Reset all states
-          setVehicleType('');
-          setPrice('');
-          setPickupOptions([]);
-          setDropoffOptions([]);
-          setPickup([]);
-          setDropoff([]);
-          setDriverLocation({
-            latitude: null,
-            longitude: null,
-          });
-          setIsConnected(false);
-          setDriverName('');
-          setStatus('');
+          resetStates();
         }
-      }
-      else {
+      } else {
         setDriverLocation({
           latitude: data.location.latitude,
           longitude: data.location.longitude,
         });
-        console.log()
-      }// Switch to map view once the booking is accepted
+      }
     };
+  };
+
+  const resetStates = () => {
+    setVehicleType('');
+    setPrice('');
+    setPickupOptions([]);
+    setDropoffOptions([]);
+    setPickup([]);
+    setDropoff([]);
+    setDriverLocation({ latitude: null, longitude: null });
+    setIsConnected(false);
+    setDriverName('');
+    setStatus('');
+    setWaitingForDriver(false);
+    setShowMap(false);
+    setBookingTime(null);
   };
 
   const fetchPrice = async () => {
@@ -172,13 +178,119 @@ export default function UserDashboard() {
         price: parseFloat(price),
       });
       if (response.status === 200) {
+        setWaitingForDriver(true);
+        setBookingTime(new Date());
         startSocketConnection();
-        toaster.positive("Booking request successful. Connecting to driver...", {});
       }
     } catch (error) {
       toaster.negative("Error making booking. Please try again.", {});
     }
   };
+
+  const renderBookingForm = () => (
+    <Card>
+      <StyledBody>
+        <HeadingLevel>
+        <Heading styleLevel={3}>Book a Ride</Heading>
+        </HeadingLevel>
+        {showMap ? (
+          <>
+            <TrackingMap 
+              lat={driverLocation.latitude} 
+              lon={driverLocation.longitude} 
+              finalLat={dropoff[0].latitude} 
+              finalLon={dropoff[0].longitude}
+            />
+            <div className={css({ marginTop: theme.sizing.scale600 })}>
+              <p><strong>Driver:</strong> {driverName}</p>
+              <p><strong>Status:</strong> <Tag closeable={false}>{status}</Tag></p>
+            </div>
+          </>
+        ) : waitingForDriver ? (
+          <div className={css({ textAlign: 'center' })}>
+            < HeadingLevel>
+            <Heading styleLevel={4}>Waiting for a driver to accept your request</Heading>
+            </HeadingLevel>
+            <ProgressBar value={10} infinite />
+            <div className={css({ marginTop: theme.sizing.scale600 })}>
+              <p><strong>Vehicle Type:</strong> {vehicleType}</p>
+              <p><strong>Pickup:</strong> {pickup[0].id}</p>
+              <p><strong>Dropoff:</strong> {dropoff[0].id}</p>
+              <p><strong>Estimated Price:</strong> ${price}</p>
+              <p><strong>Booking Time:</strong> {bookingTime.toLocaleString()}</p>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={bookRequest}>
+            <FormControl label="Vehicle Type">
+              <Select
+                options={vehicleOptions}
+                labelKey="id"
+                valueKey="value"
+                placeholder="Select vehicle type"
+                maxDropdownHeight="300px"
+                type={TYPE.search}
+                onChange={({ value }) => setVehicleType(value[0]?.value || '')}
+                value={vehicleOptions.filter((option) => option.value === vehicleType)}
+              />
+            </FormControl>
+
+            <FormControl label="Pickup Location">
+              <Select
+                options={pickupOptions}
+                labelKey="id"
+                valueKey="id"
+                placeholder="Search pickup location"
+                maxDropdownHeight="300px"
+                type={TYPE.search}
+                onInputChange={(e) => debouncedFetchPickup(e.target.value)}
+                onChange={({ value }) => setPickup(value)}
+                value={pickup}
+              />
+            </FormControl>
+
+            <FormControl label="Dropoff Location">
+              <Select
+                options={dropoffOptions}
+                labelKey="id"
+                valueKey="id"
+                placeholder="Search dropoff location"
+                maxDropdownHeight="300px"
+                type={TYPE.search}
+                onInputChange={(e) => debouncedFetchDropoff(e.target.value)}
+                onChange={({ value }) => setDropoff(value)}
+                value={dropoff}
+              />
+            </FormControl>
+
+            <div className={css({
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginTop: theme.sizing.scale600,
+            })}>
+              <Button
+                onClick={fetchPrice}
+                isLoading={loadingPrice}
+                kind="secondary"
+              >
+                {loadingPrice ? <Spinner /> : "Get Price"}
+              </Button>
+              {price && <p className={css({ fontWeight: "bold" })}>Estimated Price: ${price}</p>}
+            </div>
+
+            {price && (
+              <div className={css({
+                marginTop: theme.sizing.scale600,
+              })}>
+                <Button type="submit">Book Request</Button>
+              </div>
+            )}
+          </form>
+        )}
+      </StyledBody>
+    </Card>
+  );
 
   const renderBookingHistory = () => {
     if (bookingHistory.length === 0) {
@@ -186,25 +298,27 @@ export default function UserDashboard() {
     }
 
     return (
-      <Accordion>
-        {bookingHistory.map((booking, index) => (
-          <Panel key={index} title={`Booking Status: ${booking.status}`}>
-            <div className={css({
-              backgroundColor: "#fff",
-              padding: "10px",
-              borderRadius: "8px",
-              boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
-              marginBottom: "10px"
-            })}>
-              <p><strong>Price:</strong> ${booking.price}</p>
-              <p><strong>Pickup </strong> {booking?.pickup?.name} </p>
-              <p><strong>Dropoff </strong> {booking?.dropoff?.name} </p>
-              <p><strong>Created At:</strong> {new Date(booking.created_at).toLocaleString()}</p>
-              <p><strong>Completed At:</strong> {booking.completed_at ? new Date(booking.completed_at).toLocaleString() : "N/A"}</p>
-            </div>
-          </Panel>
-        ))}
-      </Accordion>
+      <Card>
+        <StyledBody>
+          <HeadingLevel>
+          <Heading styleLevel={3}>Booking History</Heading>
+          </HeadingLevel>
+          <Accordion>
+            {bookingHistory.map((booking, index) => (
+              <Panel key={index} title={`Booking #${index + 1} - ${booking.status}`}>
+                <FlexGrid flexGridColumnCount={2} flexGridColumnGap="scale300" flexGridRowGap="scale300">
+                  <FlexGridItem><strong>Price:</strong> ${booking.price}</FlexGridItem>
+                  <FlexGridItem><strong>Status:</strong> <Tag closeable={false}>{booking.status}</Tag></FlexGridItem>
+                  <FlexGridItem><strong>Pickup:</strong> {booking?.pickup?.name}</FlexGridItem>
+                  <FlexGridItem><strong>Dropoff:</strong> {booking?.dropoff?.name}</FlexGridItem>
+                  <FlexGridItem><strong>Created:</strong> {new Date(booking.created_at).toLocaleString()}</FlexGridItem>
+                  <FlexGridItem><strong>Completed:</strong> {booking.completed_at ? new Date(booking.completed_at).toLocaleString() : "N/A"}</FlexGridItem>
+                </FlexGrid>
+              </Panel>
+            ))}
+          </Accordion>
+        </StyledBody>
+      </Card>
     );
   };
 
@@ -213,155 +327,36 @@ export default function UserDashboard() {
       <Navbar />
       <ToasterContainer autoHideDuration={3000} />
       <div className={css({
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        flexDirection: "column",
-        padding: "20px",
-        marginTop: "20px",
-        background: "linear-gradient(135deg, #f0f4f8, #c8d6e5)",
+        padding: "40px",
+        backgroundColor: theme.colors.backgroundPrimary,
         minHeight: "100vh",
       })}>
         <HeadingLevel>
-          <Heading className={css({
-            fontSize: "2rem",
-            color: "#2c3e50",
-            textAlign: "center",
+          <Heading styleLevel={2} className={css({
+            marginBottom: theme.sizing.scale800,
+            color: theme.colors.primary,
           })}>
             User Dashboard
           </Heading>
         </HeadingLevel>
 
-        {showMap ? (
-          <>
-          <TrackingMap lat={driverLocation.latitude} lon={driverLocation.longitude} 
-            finalLat={dropoff[0].latitude} finalLon={dropoff[0].longitude}
-          />
-
-          <div className={css({
-            backgroundColor: "#fff",
-            padding: "20px",
-            borderRadius: "10px",
-            boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)",
-            width: "100%",
-            maxWidth: "400px",
-            transition: "all 0.3s ease-in-out",
-            marginTop: "20px",
-          })}>
-            <p className={css({ fontWeight: "bold" })}>Driver: {driverName}</p>
-            <p className={css({ fontWeight: "bold" })}>Status: {status}</p>
-          </div>
-
-          </>
-        ) : (
-          <div className={css({
-            backgroundColor: "#fff",
-            padding: "20px",
-            borderRadius: "10px",
-            boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)",
-            width: "100%",
-            maxWidth: "400px",
-            transition: "all 0.3s ease-in-out",
-          })}>
-            <form onSubmit={bookRequest}>
-              <FormControl label="Vehicle Type">
-                <Select
-                  options={vehicleOptions}
-                  labelKey="id"
-                  valueKey="value"
-                  placeholder="Select vehicle type"
-                  maxDropdownHeight="300px"
-                  type={TYPE.search}
-                  onChange={({ value }) => setVehicleType(value[0]?.value || '')}
-                  value={vehicleOptions.filter((option) => option.value === vehicleType)}
-                />
-              </FormControl>
-
-              <FormControl label="Pickup Location">
-                <Select
-                  options={pickupOptions}
-                  labelKey="id"
-                  valueKey="id"
-                  placeholder="Search pickup location"
-                  maxDropdownHeight="300px"
-                  type={TYPE.search}
-                  onInputChange={(e) => debouncedFetchPickup(e.target.value)}
-                  onChange={({ value }) => setPickup(value)}
-                  value={pickup}
-                />
-              </FormControl>
-
-              <FormControl label="Dropoff Location">
-                <Select
-                  options={dropoffOptions}
-                  labelKey="id"
-                  valueKey="id"
-                  placeholder="Search dropoff location"
-                  maxDropdownHeight="300px"
-                  type={TYPE.search}
-                  onInputChange={(e) => debouncedFetchDropoff(e.target.value)}
-                  onChange={({ value }) => setDropoff(value)}
-                  value={dropoff}
-                />
-              </FormControl>
-
-              <div className={css({
-                textAlign: 'center',
-                marginTop: '20px',
-              })}>
-                <Button
-                  type="button"
-                  onClick={fetchPrice}
-                  isLoading={loadingPrice}
-                  overrides={{
-                    BaseButton: {
-                      style: {
-                        width: "100%",
-                        backgroundColor: "#1abc9c",
-                        color: "#fff",
-                      },
-                    },
-                  }}
-                >
-                  {loadingPrice ? "Fetching Price..." : "Get Price"}
-                </Button>
-                {price && <p className={css({ marginTop: "10px", fontWeight: "bold" })}>Estimated Price: ${price}</p>}
-              </div>
-
-              { price &&
-              <div className={css({
-                textAlign: "center",
-                marginTop: "20px",
-              })}>
-                <Button type="submit">Book Request</Button>
-              </div>
-                }
-            </form>
-          </div>
-        )}
-
-        {/* Booking History Section */}
-        <div className={css({
-          width: "100%",
-          maxWidth: "600px",
-          marginTop: "40px",
-          backgroundColor: "#fff",
-          padding: "20px",
-          borderRadius: "10px",
-          boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)",
-        })}>
-          <HeadingLevel>
-            <Heading className={css({
-              fontSize: "1.5rem",
-              color: "#34495e",
-              textAlign: "center",
-              marginBottom: "20px",
-            })}>
-              Booking History
-            </Heading>
-          </HeadingLevel>
-          {renderBookingHistory()}
-        </div>
+        <Tabs
+          activeKey={activeTab}
+          onChange={({ activeKey }) => setActiveTab(activeKey)}
+          activateOnFocus
+          renderAll
+        >
+          <Tab title="Book a Ride">
+            <div className={css({ marginTop: theme.sizing.scale600 })}>
+              {renderBookingForm()}
+            </div>
+          </Tab>
+          <Tab title="Booking History">
+            <div className={css({ marginTop: theme.sizing.scale600 })}>
+              {renderBookingHistory()}
+            </div>
+          </Tab>
+        </Tabs>
       </div>
     </div>
   );

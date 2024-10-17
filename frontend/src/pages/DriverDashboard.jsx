@@ -1,16 +1,22 @@
-import React, { useEffect, useState } from 'react';
-import Navbar from '../components/Navbar';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useStyletron } from 'baseui';
 import { Button } from 'baseui/button';
 import { FormControl } from "baseui/form-control";
-import { Input } from "baseui/input";
 import { Select, TYPE } from 'baseui/select';
-import { Card } from 'baseui/card';
-import { useStyletron } from 'baseui';
-import BookingNotification from '../components/BookingNotification'; 
-import { confirmBooking, updateBookingStatus } from '../services/api';
+import { Card, StyledBody } from 'baseui/card';
+import { Heading, HeadingLevel } from "baseui/heading";
+import { FlexGrid, FlexGridItem } from "baseui/flex-grid";
+import { ToasterContainer, toaster } from "baseui/toast";
+import { Tag } from "baseui/tag";
+import { Tabs, Tab } from "baseui/tabs-motion";
+import { Accordion, Panel } from "baseui/accordion";
+import { ProgressBar } from "baseui/progress-bar";
+import Navbar from '../components/Navbar';
+import { confirmBooking, updateBookingStatus, getDriverBookingHistory } from '../services/api';
 
-const DriverdashBoard = () => {
-  const [css] = useStyletron();
+const DriverDashboard = () => {
+  const [css, theme] = useStyletron();
+  const [activeTab, setActiveTab] = useState("0");
   const [location, setLocation] = useState(null);
   const [ws, setWs] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -23,8 +29,9 @@ const DriverdashBoard = () => {
   const [statusOptions, setStatusOptions] = useState([
     { label: 'Enroute to Pickup', id: 'enroute_to_pickup' },
     { label: 'Picked up', id: 'picked_up' },
-    { label: 'completed', id: 'completed' },
+    { label: 'Completed', id: 'completed' },
   ]);
+  const [bookingHistory, setBookingHistory] = useState([]);
 
   const token = localStorage.getItem('token');
   const driverID = localStorage.getItem('driverID');
@@ -39,9 +46,10 @@ const DriverdashBoard = () => {
 
   useEffect(() => {
     startCommunication();
+    fetchBookingHistory();
   }, []);
 
-  const startCommunication = () => {
+  const startCommunication = useCallback(() => {
     if (!driverID) {
       console.error('Driver ID is required');
       return;
@@ -74,9 +82,9 @@ const DriverdashBoard = () => {
     return () => {
       socket.close();
     };
-  };
+  }, [driverID, token]);
 
-  const sendLocation = () => {
+  const sendLocation = useCallback(() => {
     if (ws && ws.readyState === WebSocket.OPEN) {
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition((position) => {
@@ -89,6 +97,7 @@ const DriverdashBoard = () => {
             timestamp: new Date().toISOString(),
           };
           ws.send(JSON.stringify(loc));
+          setLocation(loc.location);
           console.log('Sent location:', loc);
         });
       } else {
@@ -97,20 +106,35 @@ const DriverdashBoard = () => {
     } else {
       console.error('WebSocket is not open. Cannot send location.');
     }
+  }, [ws, driverID]);
+
+  const fetchBookingHistory = async () => {
+    try {
+      const response = await getDriverBookingHistory();
+      setBookingHistory(response.data.bookings);
+    } catch (error) {
+      toaster.negative("Error fetching booking history.", {});
+    }
   };
 
   const handleConfirmBooking = async () => {
-    const response = await confirmBooking({ mongo_id: bookingRequest.mongo_id });
-    if (response.status === 200) {
-      const data = response.data;
-      setJourney(true);
-      setUserId(data.user_id);
+    try {
+      const response = await confirmBooking({ mongo_id: bookingRequest.mongo_id });
+      if (response.status === 200) {
+        const data = response.data;
+        setJourney(true);
+        setUserId(data.user_id);
+        toaster.positive("Booking confirmed successfully!", {});
+      }
+    } catch (error) {
+      toaster.negative("Error confirming booking. Please try again.", {});
     }
-    setBookingRequest(null); 
+    setBookingRequest(null);
   };
 
   const handleIgnoreBooking = () => {
     setBookingRequest(null);
+    toaster.info("Booking request ignored.", {});
   };
 
   const updateJourneyStatus = async () => {
@@ -118,10 +142,16 @@ const DriverdashBoard = () => {
     
     try {
       const response = await updateBookingStatus(userId, { status: journeyStatus[0].id });
-      if (response.status === 404 || journeyStatus[0].id === 'completed') {
+      if (response.status === 200) {
+        toaster.positive("Journey status updated successfully!", {});
+        if (journeyStatus[0].id === 'completed') {
+          resetJourney();
+        }
+      } else if (response.status === 404) {
         resetJourney();
       }
     } catch (error) {
+      toaster.negative("Error updating journey status. Please try again.", {});
       resetJourney();
     }
   };
@@ -129,66 +159,146 @@ const DriverdashBoard = () => {
   const resetJourney = () => {
     setJourney(false);
     setUserId(null);
-    setJourneyStatus(null);
+    setJourneyStatus([{ label: 'Enroute to Pickup', id: 'enroute_to_pickup' }]);
   };
+
+  const renderCurrentJourney = () => (
+    <Card>
+      <StyledBody>
+        <HeadingLevel>
+          <Heading styleLevel={3}>Current Journey</Heading>
+        </HeadingLevel>
+        <div className={css({ marginTop: theme.sizing.scale600 })}>
+          <p><strong>User ID:</strong> {userId}</p>
+          <FormControl label="Update Journey Status">
+            <Select
+              options={statusOptions}
+              labelKey="label"
+              valueKey="id"
+              type={TYPE.select}
+              value={journeyStatus}
+              onChange={({ value }) => setJourneyStatus(value)}
+              maxDropdownHeight="300px"
+            />
+          </FormControl>
+          <Button 
+            onClick={updateJourneyStatus}
+            overrides={{
+              BaseButton: {
+                style: { 
+                  width: '100%', 
+                  marginTop: theme.sizing.scale600,
+                  backgroundColor: theme.colors.positive, 
+                  ':hover': { backgroundColor: theme.colors.positive700 }
+                },
+              },
+            }}
+          >
+            Update Status
+          </Button>
+        </div>
+      </StyledBody>
+    </Card>
+  );
+
+  const renderBookingNotification = () => (
+    <Card>
+      <StyledBody>
+        <HeadingLevel>
+          <Heading styleLevel={3}>New Booking Request</Heading>
+        </HeadingLevel>
+        <FlexGrid flexGridColumnCount={2} flexGridColumnGap="scale300" flexGridRowGap="scale300">
+          <FlexGridItem><strong>User:</strong> {bookingRequest.user_name}</FlexGridItem>
+          <FlexGridItem><strong>Price:</strong> ${bookingRequest.price}</FlexGridItem>
+          <FlexGridItem><strong>Pickup:</strong> {bookingRequest?.pickup?.name}</FlexGridItem>
+          <FlexGridItem><strong>Dropoff:</strong> {bookingRequest?.dropoff?.name}</FlexGridItem>
+        </FlexGrid>
+        <div className={css({ display: 'flex', justifyContent: 'space-between', marginTop: theme.sizing.scale800 })}>
+          <Button onClick={handleIgnoreBooking} kind="secondary">Ignore</Button>
+          <Button onClick={handleConfirmBooking}>Confirm</Button>
+        </div>
+      </StyledBody>
+    </Card>
+  );
+
+  const renderBookingHistory = () => (
+    <Card>
+      <StyledBody>
+        <HeadingLevel>
+          <Heading styleLevel={3}>Booking History</Heading>
+        </HeadingLevel>
+        {bookingHistory.length === 0 ? (
+          <p>No booking history available.</p>
+        ) : (
+          <Accordion>
+            {bookingHistory.map((booking, index) => (
+              <Panel key={index} title={`Booking #${index + 1} - ${booking.status}`}>
+                <FlexGrid flexGridColumnCount={2} flexGridColumnGap="scale300" flexGridRowGap="scale300">
+                  <FlexGridItem><strong>Price:</strong> ${booking.price}</FlexGridItem>
+                  <FlexGridItem><strong>Status:</strong> <Tag closeable={false}>{booking.status}</Tag></FlexGridItem>
+                  <FlexGridItem><strong>Pickup:</strong> {booking?.pickup?.name}</FlexGridItem>
+                  <FlexGridItem><strong>Dropoff:</strong> {booking?.dropoff?.name}</FlexGridItem>
+                  <FlexGridItem><strong>Created:</strong> {new Date(booking.created_at).toLocaleString()}</FlexGridItem>
+                  <FlexGridItem><strong>Completed:</strong> {booking.completed_at ? new Date(booking.completed_at).toLocaleString() : "N/A"}</FlexGridItem>
+                </FlexGrid>
+              </Panel>
+            ))}
+          </Accordion>
+        )}
+      </StyledBody>
+    </Card>
+  );
 
   return (
     <div>
       <Navbar />
+      <ToasterContainer autoHideDuration={3000} />
       <div className={css({
-        padding: '20px',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginTop: '50px',
+        padding: "40px",
+        backgroundColor: theme.colors.backgroundPrimary,
+        minHeight: "100vh",
       })}>
-        <Card overrides={{ Root: { style: { width: '450px', padding: '20px', textAlign: 'center' } } }}>
-          <h2 className={css({ marginBottom: '20px' })}>Driver Dashboard</h2>
-        </Card>
+        <HeadingLevel>
+          <Heading styleLevel={2} className={css({
+            marginBottom: theme.sizing.scale800,
+            color: theme.colors.primary,
+          })}>
+            Driver Dashboard
+          </Heading>
+        </HeadingLevel>
 
-        {journey && userId && (
-          <Card overrides={{ Root: { style: { width: '450px', marginTop: '20px', padding: '20px', textAlign: 'center' } } }}>
-            <h3>Current Journey</h3>
-            <p>User ID: {userId}</p>
-            <FormControl label="Update Journey Status">
-              <Select
-                options={statusOptions}
-                labelKey="label"
-                valueKey="id"
-                type={TYPE.select}
-                value={journeyStatus}
-                onChange={({ value }) => setJourneyStatus(value)}
-                maxDropdownHeight="300px"
-              />
-            </FormControl>
-            <Button 
-              onClick={updateJourneyStatus}
-              overrides={{
-                BaseButton: {
-                  style: { 
-                    width: '100%', 
-                    backgroundColor: '#FF5A5F', 
-                    ':hover': { backgroundColor: '#E04848' }
-                  },
-                },
-              }}
-            >
-              Update Status
-            </Button>
-          </Card>
-        )}
-
-        {bookingRequest && (
-          <BookingNotification
-            booking={bookingRequest}
-            onConfirm={handleConfirmBooking}
-            onIgnore={handleIgnoreBooking}
-          />
-        )}
+        <Tabs
+          activeKey={activeTab}
+          onChange={({ activeKey }) => setActiveTab(activeKey)}
+          activateOnFocus
+          renderAll
+        >
+          <Tab title="Current Journey">
+            <div className={css({ marginTop: theme.sizing.scale600 })}>
+              {journey && userId ? renderCurrentJourney() : (
+                <Card>
+                  <StyledBody>
+                    <p>No active journey. Waiting for booking requests...</p>
+                    {isConnected ? (
+                      <ProgressBar value={10} infinite />
+                    ) : (
+                      <Button onClick={startCommunication}>Connect to Server</Button>
+                    )}
+                  </StyledBody>
+                </Card>
+              )}
+              {bookingRequest && renderBookingNotification()}
+            </div>
+          </Tab>
+          <Tab title="Booking History">
+            <div className={css({ marginTop: theme.sizing.scale600 })}>
+              {renderBookingHistory()}
+            </div>
+          </Tab>
+        </Tabs>
       </div>
     </div>
   );
 };
 
-export default DriverdashBoard;
+export default DriverDashboard;
