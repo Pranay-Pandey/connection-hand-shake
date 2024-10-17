@@ -198,7 +198,7 @@ func (s *NotificationService) consumeBookingNotifications() {
 
 			if err != nil {
 				if err == context.DeadlineExceeded {
-					log.Println("No new messages, waiting before next fetch")
+					// log.Println("No new messages, waiting before next fetch")
 					time.Sleep(1 * time.Second)
 					continue
 				}
@@ -207,7 +207,7 @@ func (s *NotificationService) consumeBookingNotifications() {
 				continue
 			}
 
-			log.Printf("Received message: %s", string(msg.Value))
+			// log.Printf("Received message: %s", string(msg.Value))
 
 			var notification utils.BookedNotification
 			if err := json.Unmarshal(msg.Value, &notification); err != nil {
@@ -216,7 +216,7 @@ func (s *NotificationService) consumeBookingNotifications() {
 				continue
 			}
 
-			log.Printf("Processing notification: %+v", notification)
+			// log.Printf("Processing notification: %+v", notification)
 
 			// Handle notification status
 			switch notification.Status {
@@ -235,7 +235,7 @@ func (s *NotificationService) consumeBookingNotifications() {
 				log.Printf("Error committing message: %v", err)
 				// Consider handling this error (e.g., retry logic)
 			} else {
-				log.Println("Message processed and committed successfully")
+				// log.Println("Message processed and committed successfully")
 			}
 		}
 	}
