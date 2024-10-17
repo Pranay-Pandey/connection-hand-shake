@@ -43,7 +43,7 @@ func main() {
 	service := &NotificationService{
 		locationWriter:         utils.InitKafkaWriter("driver_locations"),
 		notificationReader:     utils.InitKafkaReader("driver_notification", "driver_notification"),
-		bookNotificationReader: utils.InitKafkaReader("booking_notifications", "booking_notification"),
+		bookNotificationReader: InitKafkaReader("booking_notifications", "notification_service_group"),
 		shutdown:               make(chan struct{}),
 	}
 
@@ -128,6 +128,18 @@ func main() {
 	os.Exit(0)
 }
 
+// Update the InitKafkaReader function in your utils package
+func InitKafkaReader(topic, groupID string) *kafka.Reader {
+	return kafka.NewReader(kafka.ReaderConfig{
+		Brokers:        []string{"localhost:9092"}, // Replace with your Kafka broker addresses
+		Topic:          topic,
+		GroupID:        groupID,
+		MinBytes:       10e3,
+		MaxBytes:       10e6,
+		CommitInterval: time.Second,
+	})
+}
+
 func (s *NotificationService) consumeNotifications() {
 	s.wg.Add(1)
 	defer s.wg.Done()
@@ -180,61 +192,63 @@ func (s *NotificationService) consumeBookingNotifications() {
 			log.Println("Stopping booking notification consumer")
 			return
 		default:
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			msg, err := s.bookNotificationReader.FetchMessage(ctx)
 			cancel()
 
 			if err != nil {
 				if err == context.DeadlineExceeded {
-					// No message available, wait a bit before trying again
+					log.Println("No new messages, waiting before next fetch")
 					time.Sleep(1 * time.Second)
-				} else {
-					log.Printf("Error fetching message: %v", err)
+					continue
 				}
+				log.Printf("Error fetching booking notification message: %v", err)
+				time.Sleep(1 * time.Second)
 				continue
 			}
 
-			// Process the message
+			log.Printf("Received message: %s", string(msg.Value))
+
 			var notification utils.BookedNotification
 			if err := json.Unmarshal(msg.Value, &notification); err != nil {
 				log.Printf("Error unmarshaling notification: %v", err)
+				// Consider handling this error (e.g., dead-letter queue)
+				continue
 			}
 
-			if notification.Status == "booked" {
+			log.Printf("Processing notification: %+v", notification)
+
+			// Handle notification status
+			switch notification.Status {
+			case "booked":
 				s.driverUserConnections.Store(notification.DriverID, notification.UserID)
-				// send back the notification to the user
-				conn, ok := s.userConnections.Load(notification.UserID)
-				if ok {
-					_ = conn.(*websocket.Conn).WriteJSON(notification)
-				} else {
-					// log.Print("User connection not found")
-				}
-			} else if notification.Status == "completed" {
+				s.notifyUser(notification.UserID, notification)
+			case "completed":
 				s.driverUserConnections.Delete(notification.DriverID)
-
-				conn, ok := s.userConnections.Load(notification.UserID)
-				if ok {
-					_ = conn.(*websocket.Conn).WriteJSON(notification)
-				}
-
-				// remove the user driver connection
-				s.driverUserConnections.Delete(notification.DriverID)
-
-				// remove the user connection from the map
+				s.notifyUser(notification.UserID, notification)
 				s.userConnections.Delete(notification.UserID)
-			} else {
-				// send back the notification to the user
-				conn, ok := s.userConnections.Load(notification.UserID)
-				if ok {
-					_ = conn.(*websocket.Conn).WriteJSON(notification)
-				}
+			default:
+				s.notifyUser(notification.UserID, notification)
 			}
 
-			// Commit the message
 			if err := s.bookNotificationReader.CommitMessages(context.Background(), msg); err != nil {
 				log.Printf("Error committing message: %v", err)
+				// Consider handling this error (e.g., retry logic)
+			} else {
+				log.Println("Message processed and committed successfully")
 			}
 		}
+	}
+}
+
+func (s *NotificationService) notifyUser(userID string, notification utils.BookedNotification) {
+	conn, ok := s.userConnections.Load(userID)
+	if ok {
+		if err := conn.(*websocket.Conn).WriteJSON(notification); err != nil {
+			log.Printf("Error sending notification to user %s: %v", userID, err)
+		}
+	} else {
+		log.Printf("User connection not found for userID: %s", userID)
 	}
 }
 
@@ -311,7 +325,7 @@ func (s *NotificationService) sendLocationUpdate(location utils.DriverLocation) 
 		if ok {
 			err = conn.(*websocket.Conn).WriteJSON(location)
 		} else {
-			// log.Print("User connection not found")
+			log.Print("User connection not found")
 		}
 	} else {
 		err = s.locationWriter.WriteMessages(context.Background(),

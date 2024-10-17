@@ -31,7 +31,7 @@ func main() {
 	service := &DriverLocationService{
 		redisClient:            redisClient,
 		kafkaReader:            utils.InitKafkaReader("driver_locations", "driver-location-service"),
-		bookNotificationReader: utils.InitKafkaReader("booking_notifications", "booking_notification"),
+		bookNotificationReader: utils.InitKafkaReader("booking_notifications", "driver_location_service_group"),
 	}
 
 	go service.consumeDriverLocations()

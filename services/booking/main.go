@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -20,6 +21,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v4"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/segmentio/kafka-go"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -31,7 +34,7 @@ type BookingService struct {
 	notificationWriter *kafka.Writer
 	bookingWriter      *kafka.Writer
 	redisClient        *redis.Client
-	PostgreSQLConn     *pgx.Conn
+	PostgreSQLConn     *pgxpool.Pool
 	shutdown           chan struct{}
 	wg                 sync.WaitGroup
 }
@@ -69,16 +72,27 @@ func main() {
 		log.Fatalf("Failed to connect to Redis: %v", err)
 	}
 
-	postgresConn, err := utils.InitPostgres()
+	poolConfig, err := pgxpool.ParseConfig(utils.GetDBConnectionString())
+	if err != nil {
+		log.Fatalf("Failed to parse pool config: %v", err)
+	}
+
+	poolConfig.MaxConns = 20
+	poolConfig.MinConns = 5
+	poolConfig.MaxConnLifetime = 1 * time.Hour
+	poolConfig.MaxConnIdleTime = 30 * time.Minute
+
+	pool, err := pgxpool.ConnectConfig(context.Background(), poolConfig)
 	if err != nil {
 		log.Fatalf("Failed to connect to PostgreSQL: %v", err)
 	}
+	defer pool.Close()
 
 	service := &BookingService{
 		mongoClient:        mongoClient,
 		notificationWriter: utils.InitKafkaWriter("driver_notification"),
 		redisClient:        redisClient,
-		PostgreSQLConn:     postgresConn,
+		PostgreSQLConn:     pool,
 		bookingWriter:      utils.InitKafkaWriter("booking_notifications"),
 		shutdown:           make(chan struct{}),
 	}
@@ -175,11 +189,6 @@ func main() {
 	closeWithTimeout(service.notificationWriter.Close, "notification writer")
 	closeWithTimeout(service.bookingWriter.Close, "book notification writer")
 
-	// Close PostgreSQL connection
-	if err := postgresConn.Close(context.Background()); err != nil {
-		log.Printf("Error closing PostgreSQL connection: %v", err)
-	}
-
 	// Close Redis connection
 	if err := redisClient.Close(); err != nil {
 		log.Printf("Error closing Redis connection: %v", err)
@@ -274,7 +283,7 @@ func (s *BookingService) handleBookingAccept(c *gin.Context) {
 	bookConReq.DriverID = driver.UserID
 
 	// delete the booking request
-	if _, err := collection.DeleteOne(context.Background(), bson.M{"_id": mongoID.MongoID}); err != nil {
+	if _, err := collection.DeleteOne(context.Background(), bson.M{"_id": objectID}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "error deleting booking request"})
 		return
 	}
@@ -416,23 +425,44 @@ func (s *BookingService) handleUserBookingCheck(c *gin.Context) {
 
 	user, _ := authUser.(utils.UserRequest)
 
-	// check if the user has any booking request made which is in mongodb
-	// then check if the user has any booking made which is in postgres
+	// Check if the user has any booking request made in MongoDB
 	collection := s.mongoClient.Database("logistics").Collection("booking_requests")
 	var bookingReq utils.BookingRequest
-	if err := collection.FindOne(context.Background(), bson.M{"user_id": user.UserID}).Decode(&bookingReq); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "no booking request found"})
+	err := collection.FindOne(context.Background(), bson.M{"user_id": user.UserID}).Decode(&bookingReq)
+
+	if err == nil {
+		// Booking request found in MongoDB
+		c.JSON(http.StatusOK, gin.H{"booking_request": bookingReq})
+		return
+	} else if err != mongo.ErrNoDocuments {
+		// An error occurred that is not a 'not found' error
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error", "err": err})
 		return
 	}
 
-	// check if the user has any booking made which is in postgres where status is not completed or not cancelled
+	// If no booking request found in MongoDB, check PostgreSQL
+	userId, err := strconv.Atoi(user.UserID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
+		return
+	}
+
+	// Check if the user has any booking made in PostgreSQL where status is not completed or cancelled
 	var booking Booking
-	if err := s.PostgreSQLConn.QueryRow(context.Background(), "SELECT * FROM booking WHERE user_id = $1 AND status != $2 AND status != $3", user.UserID, "completed", "cancelled").Scan(&booking.ID, &booking.UserID, &booking.DriverID, &booking.Price, &booking.Pickup.Latitude, &booking.Pickup.Longitude, &booking.Dropoff.Latitude, &booking.Dropoff.Longitude, &booking.BookedAt, &booking.CompletedAt, &booking.Status); err != nil {
+	err = s.PostgreSQLConn.QueryRow(context.Background(),
+		"SELECT user_id, driver_id, price, pickup_latitude, pickup_longitude, dropoff_latitude, dropoff_longitude, created_at, status, pickup_name, dropoff_name FROM booking WHERE user_id = $1 AND status != $2 AND status != $3",
+		userId, "completed", "cancelled").Scan(&booking.UserID, &booking.DriverID, &booking.Price, &booking.Pickup.Latitude, &booking.Pickup.Longitude, &booking.Dropoff.Latitude, &booking.Dropoff.Longitude, &booking.BookedAt, &booking.Status, &booking.Pickup.Name, &booking.Dropoff.Name)
+
+	if err == pgx.ErrNoRows {
 		c.JSON(http.StatusNotFound, gin.H{"error": "no booking found"})
 		return
+	} else if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error", "err": err})
+		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"booking_request": bookingReq, "booking": booking})
+	// If a booking is found in PostgreSQL
+	c.JSON(http.StatusOK, gin.H{"booking_request": nil, "booking": booking})
 }
 
 func (s *BookingService) handleUserBookingHistory(c *gin.Context) {
@@ -455,10 +485,14 @@ func (s *BookingService) handleUserBookingHistory(c *gin.Context) {
 	var bookings []Booking
 	for rows.Next() {
 		var booking Booking
-		if err := rows.Scan(&booking.UserID, &booking.DriverID, &booking.Price, &booking.Pickup.Latitude, &booking.Pickup.Longitude, &booking.Dropoff.Latitude, &booking.Dropoff.Longitude, &booking.BookedAt, &booking.CompletedAt, &booking.Status, &booking.Pickup.Name, &booking.Dropoff.Name); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "error fetching booking history",
+		completedAt := new(time.Time)
+		if err := rows.Scan(&booking.UserID, &booking.DriverID, &booking.Price, &booking.Pickup.Latitude, &booking.Pickup.Longitude, &booking.Dropoff.Latitude, &booking.Dropoff.Longitude, &booking.BookedAt, &completedAt, &booking.Status, &booking.Pickup.Name, &booking.Dropoff.Name); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "error reading booking history",
 				"err": err})
 			return
+		}
+		if completedAt != nil {
+			booking.CompletedAt = *completedAt
 		}
 		bookings = append(bookings, booking)
 	}
@@ -480,13 +514,26 @@ func (s *BookingService) handleDriverBookingCheck(c *gin.Context) {
 
 	driver, _ := authDriver.(utils.UserRequest)
 
-	// check if the driver has any booking made which is in postgres where status is not completed or not cancelled
+	driverID, err := strconv.Atoi(driver.UserID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid driver id"})
+		return
+	}
+	// Check if the user has any booking made in PostgreSQL where status is not completed or cancelled
 	var booking Booking
-	if err := s.PostgreSQLConn.QueryRow(context.Background(), "SELECT * FROM booking WHERE driver_id = $1 AND status != $2 AND status != $3", driver.UserID, "completed", "cancelled").Scan(&booking.ID, &booking.UserID, &booking.DriverID, &booking.Price, &booking.Pickup.Latitude, &booking.Pickup.Longitude, &booking.Dropoff.Latitude, &booking.Dropoff.Longitude, &booking.BookedAt, &booking.CompletedAt, &booking.Status); err != nil {
+	err = s.PostgreSQLConn.QueryRow(context.Background(),
+		"SELECT user_id, driver_id, price, pickup_latitude, pickup_longitude, dropoff_latitude, dropoff_longitude, created_at, status, pickup_name, dropoff_name FROM booking WHERE driver_id = $1 AND status != $2 AND status != $3",
+		driverID, "completed", "cancelled").Scan(&booking.UserID, &booking.DriverID, &booking.Price, &booking.Pickup.Latitude, &booking.Pickup.Longitude, &booking.Dropoff.Latitude, &booking.Dropoff.Longitude, &booking.BookedAt, &booking.Status, &booking.Pickup.Name, &booking.Dropoff.Name)
+
+	if err == pgx.ErrNoRows {
 		c.JSON(http.StatusNotFound, gin.H{"error": "no booking found"})
+		return
+	} else if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error", "err": err})
 		return
 	}
 
+	// If a booking is found in PostgreSQL
 	c.JSON(http.StatusOK, gin.H{"booking": booking})
 }
 
@@ -510,9 +557,13 @@ func (s *BookingService) handleDriverBookingHistory(c *gin.Context) {
 	var bookings []Booking
 	for rows.Next() {
 		var booking Booking
-		if err := rows.Scan(&booking.UserID, &booking.DriverID, &booking.Price, &booking.Pickup.Latitude, &booking.Pickup.Longitude, &booking.Dropoff.Latitude, &booking.Dropoff.Longitude, &booking.BookedAt, &booking.CompletedAt, &booking.Status, &booking.Pickup.Name, &booking.Dropoff.Name); err != nil {
+		completedAt := new(time.Time)
+		if err := rows.Scan(&booking.UserID, &booking.DriverID, &booking.Price, &booking.Pickup.Latitude, &booking.Pickup.Longitude, &booking.Dropoff.Latitude, &booking.Dropoff.Longitude, &booking.BookedAt, &completedAt, &booking.Status, &booking.Pickup.Name, &booking.Dropoff.Name); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "error fetching booking history"})
 			return
+		}
+		if completedAt != nil {
+			booking.CompletedAt = *completedAt
 		}
 		bookings = append(bookings, booking)
 	}
