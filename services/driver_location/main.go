@@ -1,4 +1,3 @@
-// services/driver_location/main.go
 package main
 
 import (

@@ -1,4 +1,3 @@
-// services/booking/main.go
 package main
 
 import (
