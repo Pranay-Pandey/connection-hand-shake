@@ -60,13 +60,10 @@ func (s *DriverLocationService) UpdateDriverLocation(location utils.DriverLocati
 		Longitude: location.Location.Longitude,
 		Latitude:  location.Location.Latitude,
 	}).Err()
-
-	log.Print("Updated driver err: ", err)
 	return err
 }
 
 func (s *DriverLocationService) RemoveDriverFromCache(driverID string) error {
-	log.Print("Removing driver from cache: ", driverID)
 	_, err := s.redisClient.ZRem(context.Background(), "driver_locations", driverID).Result()
 	return err
 }
