@@ -60,8 +60,7 @@ export default function UserDashboard() {
         const response = await getCurrentUserBooking();
         if (response?.data?.booking_request) {
           setWaitingForDriver(true);
-          // set current time for now
-          setBookingTime(response.data.booking_request.created_at);
+          setBookingTime(new Date(response.data.booking_request.created_at));
           setVehicleType(response.data.booking_request.vehicle_type);
           setPickup([{
             id: response.data.booking_request.pickup.name,
@@ -140,7 +139,7 @@ export default function UserDashboard() {
     const socket = new WebSocket(`ws://localhost:8080/user/ws`);
     socket.onopen = () => {
       setIsConnected(true);
-      toaster.info("Connected. Waiting for a driver to accept your request.", {});
+      // toaster.info("Connected. Waiting for a driver to accept your request.", {});
       socket.send(JSON.stringify({ token: localStorage.getItem('token') }));
     };
     socket.onmessage = (event) => {
@@ -157,7 +156,7 @@ export default function UserDashboard() {
           setWaitingForDriver(false);
           setShowMap(true);
           setDriverName(data.driver_name)
-          toaster.positive("A driver has accepted your request!", {});
+          toaster.positive("Active Booking", {});
         }
         if (data.status === "completed") {
           toaster.positive("Booking completed. Thank you for using our service.", {});
