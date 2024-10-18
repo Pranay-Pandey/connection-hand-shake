@@ -2,24 +2,11 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
 	"log"
 	"logistics-platform/lib/config"
 	"logistics-platform/lib/database"
-	kafkaConfig "logistics-platform/lib/kafka"
-	"logistics-platform/lib/utils"
-	"time"
-
-	"github.com/redis/go-redis/v9"
-	"github.com/segmentio/kafka-go"
+	"logistics-platform/services/driver_location/service"
 )
-
-type DriverLocationService struct {
-	redisClient            *redis.Client
-	kafkaReader            *kafka.Reader
-	bookNotificationReader *kafka.Reader
-}
 
 func main() {
 	if err := config.LoadConfig(); err != nil {
@@ -31,86 +18,10 @@ func main() {
 		log.Fatalf("Failed to connect to Redis: %v", err)
 	}
 
-	service := &DriverLocationService{
-		redisClient:            redisClient,
-		kafkaReader:            kafkaConfig.InitKafkaReader("driver_locations", "driver-location-service"),
-		bookNotificationReader: kafkaConfig.InitKafkaReader("booking_notifications", "driver_location_service_group"),
-	}
+	server := service.NewDriverLocationService(redisClient)
 
-	go service.consumeDriverLocations()
-	go service.consumeBookingNotifications()
+	go server.ConsumeDriverLocations()
+	go server.ConsumeBookingNotifications()
 
-	utils.WaitForShutdown(redisClient, service.kafkaReader)
-}
-
-func (s *DriverLocationService) consumeDriverLocations() {
-	for {
-		msg, err := s.kafkaReader.ReadMessage(context.Background())
-		if err != nil {
-			log.Printf("Error reading message from Kafka: %v", err)
-			continue
-		}
-
-		var location utils.DriverLocation
-		if err := json.Unmarshal(msg.Value, &location); err != nil {
-			log.Printf("Error unmarshaling location update: %v", err)
-			continue
-		}
-
-		if location.Location.Latitude == 0 && location.Location.Longitude == 0 {
-			if err := s.removeDriverFromCache(location.DriverID); err != nil {
-				log.Printf("Error removing driver from cache: %v", err)
-			}
-			continue
-		}
-
-		if err := s.updateDriverLocation(location); err != nil {
-			log.Printf("Error updating driver location: %v", err)
-		}
-	}
-}
-
-func (s *DriverLocationService) updateDriverLocation(location utils.DriverLocation) error {
-	err := s.redisClient.GeoAdd(context.Background(), "driver_locations", &redis.GeoLocation{
-		Name:      location.DriverID,
-		Longitude: location.Location.Longitude,
-		Latitude:  location.Location.Latitude,
-	}).Err()
-
-	if err != nil {
-		return err
-	}
-
-	// Set expiration time for the driver's location to 5 minutes
-	expiration := 5 * time.Minute
-	_, err = s.redisClient.Expire(context.Background(), "driver_locations:"+location.DriverID, expiration).Result()
-
-	return err
-}
-
-func (s *DriverLocationService) removeDriverFromCache(driverID string) error {
-	_, err := s.redisClient.ZRem(context.Background(), "driver_locations", driverID).Result()
-	return err
-}
-
-func (s *DriverLocationService) consumeBookingNotifications() {
-	for {
-		msg, err := s.bookNotificationReader.ReadMessage(context.Background())
-		if err != nil {
-			log.Printf("Error reading message: %v", err)
-			continue
-		}
-
-		var notification utils.BookedNotification
-		if err := json.Unmarshal(msg.Value, &notification); err != nil {
-			log.Printf("Error unmarshaling notification: %v", err)
-			continue
-		}
-
-		if notification.Status == "booked" {
-			if err := s.removeDriverFromCache(notification.DriverID); err != nil {
-				log.Printf("Error removing driver from cache: %v", err)
-			}
-		}
-	}
+	server.GracefulShutdown()
 }
