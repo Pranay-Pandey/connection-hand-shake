@@ -1,0 +1,26 @@
+# Use golang:1.23-alpine as the base image
+FROM golang:1.23-alpine
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Copy go.mod and go.sum files
+COPY go.mod go.sum ./
+
+# Copy the lib directory
+COPY lib ./lib
+
+# Copy the authentication service files
+COPY services/driver_location ./services/driver_location
+
+# Copy the .env file
+COPY .env ./
+
+# Download dependencies
+RUN go mod download
+
+# Build the authentication service
+RUN go build -o driver_loc ./services/driver_location
+
+# Command to run the service
+CMD ["./driver_loc"]

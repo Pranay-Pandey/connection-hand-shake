@@ -1,0 +1,61 @@
+version: '3.8'
+services:
+
+  admin:
+    build:
+      context: ./
+      dockerfile: services/admin/Dockerfile
+    ports:
+      - "8085:8085"
+    network_mode: "host"  # Please change this according to your network configuration
+    environment:
+      - GIN_MODE=release
+
+  auth:
+    build:
+      context: ./
+      dockerfile: services/authentication/Dockerfile
+    ports:
+      - "8081:8081" 
+    network_mode: "host"
+    environment:
+      - GIN_MODE=release
+
+  booking:
+    build:
+      context: ./
+      dockerfile: services/booking/Dockerfile
+    ports:
+      - "8084:8084" 
+    network_mode: "host"
+    environment:
+      - GIN_MODE=release
+
+  driver_location:
+    build:
+      context: ./
+      dockerfile: services/driver_location/Dockerfile
+    network_mode: "host"
+
+  notification:
+    build:
+      context: ./
+      dockerfile: services/notification/Dockerfile
+    ports:
+      - "8080:8080"
+    network_mode: "host"
+    environment:
+      - GIN_MODE=release
+
+  pricing:
+    build:
+      context: ./
+      dockerfile: services/pricing/Dockerfile
+    ports:
+      - "8086:8086"
+    network_mode: "host"
+    environment:
+      - GIN_MODE=release
+
+volumes:
+  postgres_data:
