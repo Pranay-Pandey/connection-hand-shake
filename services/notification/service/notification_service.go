@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"log"
 	kafkaConfig "logistics-platform/lib/kafka"
+	"logistics-platform/lib/models"
 	"logistics-platform/lib/token"
-	"logistics-platform/lib/utils"
 	"logistics-platform/services/notification/interfaces"
 	"net/http"
 	"os"
@@ -70,7 +70,7 @@ func (s *NotificationService) ConsumeNotifications() {
 			}
 
 			// Process the message
-			var notification utils.BookingNotification
+			var notification models.BookingNotification
 			if err := json.Unmarshal(msg.Value, &notification); err != nil {
 				log.Printf("Error unmarshaling notification: %v", err)
 			} else {
@@ -114,7 +114,7 @@ func (s *NotificationService) ConsumeBookingNotifications() {
 
 			// log.Printf("Received message: %s", string(msg.Value))
 
-			var notification utils.BookedNotification
+			var notification models.BookedNotification
 			if err := json.Unmarshal(msg.Value, &notification); err != nil {
 				log.Printf("Error unmarshaling notification: %v", err)
 				// Consider handling this error (e.g., dead-letter queue)
@@ -146,7 +146,7 @@ func (s *NotificationService) ConsumeBookingNotifications() {
 	}
 }
 
-func (s *NotificationService) NotifyUser(userID string, notification utils.BookedNotification) {
+func (s *NotificationService) NotifyUser(userID string, notification models.BookedNotification) {
 	conn, ok := s.userConnections.Load(userID)
 	if ok {
 		if err := conn.(*websocket.Conn).WriteJSON(notification); err != nil {
@@ -198,12 +198,12 @@ func (s *NotificationService) HandleDriverWebSocket(c *gin.Context) {
 	defer func() {
 		s.driverConnections.Delete(driverID)
 		// send empty location to kafka to remove driver from cache
-		s.SendLocationUpdate(utils.DriverLocation{DriverID: driverID})
+		s.SendLocationUpdate(models.DriverLocation{DriverID: driverID})
 	}()
 
 	// Proceed with WebSocket communication
 	for {
-		var location utils.DriverLocation
+		var location models.DriverLocation
 		if err := conn.ReadJSON(&location); err != nil {
 			log.Printf("Error reading location JSON: %v", err)
 			break
@@ -217,7 +217,7 @@ func (s *NotificationService) HandleDriverWebSocket(c *gin.Context) {
 	}
 }
 
-func (s *NotificationService) SendLocationUpdate(location utils.DriverLocation) error {
+func (s *NotificationService) SendLocationUpdate(location models.DriverLocation) error {
 	message, err := json.Marshal(location)
 	if err != nil {
 		return fmt.Errorf("failed to marshal location: %w", err)
@@ -240,7 +240,7 @@ func (s *NotificationService) SendLocationUpdate(location utils.DriverLocation) 
 	return err
 }
 
-func (s *NotificationService) SendNotification(notification utils.BookingNotification) error {
+func (s *NotificationService) SendNotification(notification models.BookingNotification) error {
 	conn, ok := s.driverConnections.Load(notification.DriverID)
 	if !ok {
 		return fmt.Errorf("driver %s not connected", notification.DriverID)

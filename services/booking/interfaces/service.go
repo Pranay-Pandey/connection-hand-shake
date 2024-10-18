@@ -1,8 +1,7 @@
 package interfaces
 
 import (
-	"logistics-platform/lib/utils"
-	"logistics-platform/services/booking/models"
+	"logistics-platform/lib/models"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -14,9 +13,9 @@ type BookingInterface interface {
 	ProcessBooked(bookConReq models.BookingConfirmation) error
 	ProduceBookingEvent(userID, driverID, driverName, status string)
 	HandleBookingRequest(c *gin.Context)
-	ProcessBookingRequest(bookingReq utils.BookingRequest) error
-	FindAndNotifyNearbyDrivers(bookingReq utils.BookingRequest, vehicleType string) error
-	NotifyDriver(driverID string, bookingReq utils.BookingRequest) error
+	ProcessBookingRequest(bookingReq models.BookingRequest) error
+	FindAndNotifyNearbyDrivers(bookingReq models.BookingRequest, vehicleType string) error
+	NotifyDriver(driverID string, bookingReq models.BookingRequest) error
 	HandleUserBookingCheck(c *gin.Context)
 	HandleUserBookingHistory(c *gin.Context)
 	HandleDriverBookingCheck(c *gin.Context)

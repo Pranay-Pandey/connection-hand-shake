@@ -1,49 +1,12 @@
 package models
 
-type User struct {
-	ID       int32  `json:"id"`
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
+type GeoPoint struct {
+	Latitude  float64 `json:"latitude" bson:"latitude"`
+	Longitude float64 `json:"longitude" bson:"longitude"`
+	Name      string  `json:"name" bson:"name"`
 }
 
-type VehicleDriver struct {
-	ID            int32  `json:"id"`
-	Name          string `json:"name"`
-	VehicleID     string `json:"vehicleID"`
-	Email         string `json:"email"`
-	Password      string `json:"password"`
-	VehicleType   string `json:"vehicleType"`
-	VehicleVolume string `json:"vehicleVolume"`
-}
-
-type Booking struct {
-	ID          int32  `json:"id"`
-	UserID      string `json:"userID"`
-	VehicleID   string `json:"vehicleID"`
-	Price       string `json:"price"`
-	Pickup      string `json:"pickup"`
-	Dropoff     string `json:"dropoff"`
-	BookedAt    string `json:"bookedAt"`
-	CompletedAt string `json:"completedAt"`
-}
-
-type AdminUser struct {
-	ID       int32  `json:"id"`
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
-type Driver struct {
-	ID       int32  `json:"id"`
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Password string `json:"password,omitempty"`
-}
-
-type Admin struct {
-	ID       int32  `json:"id"`
-	Username string `json:"username"`
-	Password string `json:"password,omitempty"`
+type UserRequest struct {
+	UserID   string `json:"user_id" bson:"user_id"`
+	UserName string `json:"user_name" bson:"user_name"`
 }

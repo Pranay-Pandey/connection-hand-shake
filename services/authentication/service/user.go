@@ -4,7 +4,6 @@ import (
 	"context"
 	"logistics-platform/lib/models"
 	"logistics-platform/lib/token"
-	"logistics-platform/lib/utils"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -67,7 +66,7 @@ func (s *authService) GetProfile(c *gin.Context) {
 		return
 	}
 
-	userReq := authUser.(utils.UserRequest)
+	userReq := authUser.(models.UserRequest)
 
 	row := s.db.QueryRow(
 		context.Background(),

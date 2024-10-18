@@ -1,12 +1,12 @@
 package interfaces
 
 import (
-	"logistics-platform/lib/utils"
+	"logistics-platform/lib/models"
 )
 
 type DriverLocationInterface interface {
 	ConsumeDriverLocations()
-	UpdateDriverLocation(location utils.DriverLocation) error
+	UpdateDriverLocation(location models.DriverLocation) error
 	RemoveDriverFromCache(driverID string) error
 	ConsumeBookingNotifications()
 	GracefulShutdown()

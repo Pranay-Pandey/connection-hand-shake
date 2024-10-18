@@ -44,7 +44,7 @@ func (s *AdminService) GetFleetStats(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	var stats FleetStats
+	var stats models.FleetStats
 
 	err := retry(3, 100*time.Millisecond, func() error {
 		tx, err := s.pool.Begin(ctx)
@@ -95,7 +95,7 @@ func (s *AdminService) GetDriverPerformance(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	var performances []DriverPerformance
+	var performances []models.DriverPerformance
 
 	err := retry(3, 100*time.Millisecond, func() error {
 		rows, err := s.pool.Query(ctx, `
@@ -122,7 +122,7 @@ func (s *AdminService) GetDriverPerformance(c *gin.Context) {
 		defer rows.Close()
 
 		for rows.Next() {
-			var perf DriverPerformance
+			var perf models.DriverPerformance
 			if err := rows.Scan(&perf.DriverID, &perf.Name, &perf.TripCount, &perf.AvgTripTime, &perf.TotalRevenue); err != nil {
 				return fmt.Errorf("failed to scan driver performance: %v", err)
 			}
@@ -145,7 +145,7 @@ func (s *AdminService) GetBookingAnalytics(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	var analytics BookingAnalytics
+	var analytics models.BookingAnalytics
 
 	err := retry(3, 100*time.Millisecond, func() error {
 		return s.pool.QueryRow(ctx, `

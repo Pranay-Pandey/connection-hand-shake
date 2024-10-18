@@ -4,7 +4,6 @@ import (
 	"context"
 	"logistics-platform/lib/models"
 	"logistics-platform/lib/token"
-	"logistics-platform/lib/utils"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -37,7 +36,7 @@ func (s *authService) GetDriverProfile(c *gin.Context) {
 		return
 	}
 
-	user := authUser.(utils.UserRequest)
+	user := authUser.(models.UserRequest)
 
 	driverID := c.Param("id")
 

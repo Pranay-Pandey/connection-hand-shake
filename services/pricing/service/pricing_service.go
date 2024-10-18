@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 	"log"
+	"logistics-platform/lib/models"
 	"logistics-platform/lib/utils"
 	"logistics-platform/services/pricing/interfaces"
-	"logistics-platform/services/pricing/models"
 	"math"
 	"net/http"
 	"time"
@@ -61,7 +61,7 @@ func NewPricingService(db *pgxpool.Pool, redisClient *redis.Client) interfaces.P
 }
 
 func (s *PricingService) HandlePriceEstimate(c *gin.Context) {
-	var req utils.BookingRequest
+	var req models.BookingRequest
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -80,7 +80,7 @@ func (s *PricingService) HandlePriceEstimate(c *gin.Context) {
 	})
 }
 
-func (s *PricingService) EstimatePrice(ctx context.Context, req utils.BookingRequest) (models.PriceEstimate, error) {
+func (s *PricingService) EstimatePrice(ctx context.Context, req models.BookingRequest) (models.PriceEstimate, error) {
 	distance := calculateDistance(req.Pickup, req.Dropoff)
 	duration := estimateDuration(distance)
 
@@ -106,7 +106,7 @@ func (s *PricingService) EstimatePrice(ctx context.Context, req utils.BookingReq
 	}, nil
 }
 
-func calculateDistance(pickup, dropoff utils.GeoPoint) float64 {
+func calculateDistance(pickup, dropoff models.GeoPoint) float64 {
 	// Haversine formula for calculating distance between two points on a sphere
 	const earthRadius = 6371 // km
 
@@ -140,7 +140,7 @@ func (s *PricingService) GetVehiclePricing(vehicleType string) (models.VehiclePr
 	return vehiclePricingData[vehicleType], nil
 }
 
-func (s *PricingService) CalculateSurgeMultiplier(ctx context.Context, pickup, dropoff utils.GeoPoint) float64 {
+func (s *PricingService) CalculateSurgeMultiplier(ctx context.Context, pickup, dropoff models.GeoPoint) float64 {
 	demand, err := s.GetCurrentDemand(pickup)
 	if err != nil {
 		log.Printf("Failed to get current demand: %v", err)
@@ -164,7 +164,7 @@ func (s *PricingService) CalculateSurgeMultiplier(ctx context.Context, pickup, d
 	return surgeFactor
 }
 
-func (s *PricingService) GetCurrentDemand(location utils.GeoPoint) (float64, error) {
+func (s *PricingService) GetCurrentDemand(location models.GeoPoint) (float64, error) {
 	// Get nearby drivers
 	nearby, err := s.redisClient.GeoRadius(context.Background(), "driver_locations", location.Longitude, location.Latitude, &redis.GeoRadiusQuery{
 		Radius: 1000,

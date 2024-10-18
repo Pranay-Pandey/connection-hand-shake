@@ -1,7 +1,7 @@
 package interfaces
 
 import (
-	"logistics-platform/lib/utils"
+	"logistics-platform/lib/models"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -10,10 +10,10 @@ import (
 type NotificationInterface interface {
 	ConsumeNotifications()
 	ConsumeBookingNotifications()
-	NotifyUser(userID string, notification utils.BookedNotification)
+	NotifyUser(userID string, notification models.BookedNotification)
 	HandleDriverWebSocket(c *gin.Context)
-	SendLocationUpdate(location utils.DriverLocation) error
-	SendNotification(notification utils.BookingNotification) error
+	SendLocationUpdate(location models.DriverLocation) error
+	SendNotification(notification models.BookingNotification) error
 	HandleUserWebSocket(c *gin.Context)
 	GracefulShutdown(server *http.Server)
 }

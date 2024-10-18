@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"logistics-platform/lib/utils"
+	"logistics-platform/lib/models"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/spf13/viper"
@@ -54,7 +54,7 @@ func ValidateToken(tokenString string) (bool, error) {
 }
 
 // GetUserFromToken extracts user information from the token
-func GetUserFromToken(tokenString string) (utils.UserRequest, error) {
+func GetUserFromToken(tokenString string) (models.UserRequest, error) {
 	claims := &jwt.StandardClaims{}
 
 	// Parse the token
@@ -62,10 +62,10 @@ func GetUserFromToken(tokenString string) (utils.UserRequest, error) {
 		return jwtKey, nil
 	})
 	if err != nil {
-		return utils.UserRequest{}, fmt.Errorf("error parsing token: %v", err)
+		return models.UserRequest{}, fmt.Errorf("error parsing token: %v", err)
 	}
 
-	user := utils.UserRequest{
+	user := models.UserRequest{
 		UserID:   claims.Subject,
 		UserName: claims.Audience,
 	}

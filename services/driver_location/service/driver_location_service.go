@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"logistics-platform/lib/models"
 	"logistics-platform/lib/utils"
 	"logistics-platform/services/driver_location/interfaces"
 
@@ -35,7 +36,7 @@ func (s *DriverLocationService) ConsumeDriverLocations() {
 			continue
 		}
 
-		var location utils.DriverLocation
+		var location models.DriverLocation
 		if err := json.Unmarshal(msg.Value, &location); err != nil {
 			log.Printf("Error unmarshaling location update: %v", err)
 			continue
@@ -54,7 +55,7 @@ func (s *DriverLocationService) ConsumeDriverLocations() {
 	}
 }
 
-func (s *DriverLocationService) UpdateDriverLocation(location utils.DriverLocation) error {
+func (s *DriverLocationService) UpdateDriverLocation(location models.DriverLocation) error {
 	err := s.redisClient.GeoAdd(context.Background(), "driver_locations", &redis.GeoLocation{
 		Name:      location.DriverID,
 		Longitude: location.Location.Longitude,
@@ -76,7 +77,7 @@ func (s *DriverLocationService) ConsumeBookingNotifications() {
 			continue
 		}
 
-		var notification utils.BookedNotification
+		var notification models.BookedNotification
 		if err := json.Unmarshal(msg.Value, &notification); err != nil {
 			log.Printf("Error unmarshaling notification: %v", err)
 			continue
