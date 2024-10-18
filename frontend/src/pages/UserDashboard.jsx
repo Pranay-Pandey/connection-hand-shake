@@ -194,7 +194,6 @@ export default function UserDashboard() {
     }
 
     setLoadingPrice(true);
-    toaster.info("Fetching price...", {});
 
     try {
       const response = await getPrice({
@@ -331,7 +330,10 @@ export default function UserDashboard() {
               marginTop: theme.sizing.scale600,
             })}>
               <Button
-                onClick={fetchPrice}
+                onClick={(e)=>{
+                  e.preventDefault();
+                  fetchPrice();
+                }}
                 isLoading={loadingPrice}
                 kind="secondary"
               >
