@@ -80,7 +80,10 @@ export default function UserDashboard() {
           const timeDiff = currentTime - new Date(response.data.booking_request.created_at);
           const timeRemaining = 10 * 60 * 1000 - timeDiff;
           setTimeout(() => {
-            resetStates();
+            // if the request is still in waiting state, reset the states
+            if (waitingForDriver){
+              resetStates();
+            }
           }, timeRemaining);
         }
         else if (response?.data?.booking) {
