@@ -11,12 +11,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
 type PricingService struct {
-	db          *pgxpool.Pool
 	redisClient *redis.Client
 }
 
@@ -53,9 +51,8 @@ var vehiclePricingData = map[string]models.VehiclePricing{
 	},
 }
 
-func NewPricingService(db *pgxpool.Pool, redisClient *redis.Client) interfaces.PricingInterface {
+func NewPricingService(redisClient *redis.Client) interfaces.PricingInterface {
 	return &PricingService{
-		db:          db,
 		redisClient: redisClient,
 	}
 }

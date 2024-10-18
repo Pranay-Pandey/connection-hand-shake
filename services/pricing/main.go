@@ -1,10 +1,8 @@
 package main
 
 import (
-	"context"
 	"log"
 	"net/http"
-	"time"
 
 	"logistics-platform/lib/config"
 	"logistics-platform/lib/database"
@@ -12,8 +10,6 @@ import (
 	"logistics-platform/services/pricing/service"
 
 	"logistics-platform/lib/middlewares/cors"
-
-	"github.com/jackc/pgx/v4/pgxpool"
 
 	"github.com/gin-gonic/gin"
 )
@@ -28,23 +24,7 @@ func main() {
 		log.Fatalf("Failed to connect to Redis: %v", err)
 	}
 
-	poolConfig, err := pgxpool.ParseConfig(config.GetDBConnectionString())
-	if err != nil {
-		log.Fatalf("Failed to parse pool config: %v", err)
-	}
-
-	poolConfig.MaxConns = 20
-	poolConfig.MinConns = 5
-	poolConfig.MaxConnLifetime = 1 * time.Hour
-	poolConfig.MaxConnIdleTime = 30 * time.Minute
-
-	pool, err := pgxpool.ConnectConfig(context.Background(), poolConfig)
-	if err != nil {
-		log.Fatalf("Failed to connect to PostgreSQL: %v", err)
-	}
-	defer pool.Close()
-
-	service := service.NewPricingService(pool, redisClient)
+	service := service.NewPricingService(redisClient)
 
 	r := gin.Default()
 	r.Use(cors.CORSMiddleware())
