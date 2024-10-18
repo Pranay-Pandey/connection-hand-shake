@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
+  <style>
+    text { font-family: Arial, sans-serif; font-size: 14px; }
+    .title { font-size: 20px; font-weight: bold; }
+    .entity { fill: #AED6F1; stroke: #3498DB; }
+    .attribute { fill: #F9E79F; }
+  </style>
+  
+  <!-- Title -->
+  <text x="400" y="30" text-anchor="middle" class="title">Logistics Platform ER Diagram</text>
+
+  <!-- User Entity -->
+  <rect x="50" y="60" width="150" height="100" rx="5" class="entity"/>
+  <text x="125" y="85" text-anchor="middle" font-weight="bold">User</text>
+  <text x="60" y="110" class="attribute">id</text>
+  <text x="60" y="130" class="attribute">name</text>
+  <text x="60" y="150" class="attribute">email</text>
+
+  <!-- Admin Entity -->
+  <rect x="250" y="60" width="150" height="100" rx="5" class="entity"/>
+  <text x="325" y="85" text-anchor="middle" font-weight="bold">Admin</text>
+  <text x="260" y="110" class="attribute">id</text>
+  <text x="260" y="130" class="attribute">name</text>
+  <text x="260" y="150" class="attribute">email</text>
+
+  <!-- VehicleDriver Entity -->
+  <rect x="450" y="60" width="150" height="140" rx="5" class="entity"/>
+  <text x="525" y="85" text-anchor="middle" font-weight="bold">VehicleDriver</text>
+  <text x="460" y="110" class="attribute">id</text>
+  <text x="460" y="130" class="attribute">name</text>
+  <text x="460" y="150" class="attribute">vehicleId</text>
+  <text x="460" y="170" class="attribute">email</text>
+  <text x="460" y="190" class="attribute">vehicleType</text>
+
+  <!-- Booking Entity -->
+  <rect x="250" y="220" width="150" height="160" rx="5" class="entity"/>
+  <text x="325" y="245" text-anchor="middle" font-weight="bold">Booking</text>
+  <text x="260" y="270" class="attribute">id</text>
+  <text x="260" y="290" class="attribute">userId</text>
+  <text x="260" y="310" class="attribute">driverId</text>
+  <text x="260" y="330" class="attribute">pickupLocation</text>
+  <text x="260" y="350" class="attribute">dropoffLocation</text>
+  <text x="260" y="370" class="attribute">price</text>
+
+  <!-- BookingRequest Entity (MongoDB) -->
+  <rect x="50" y="220" width="150" height="140" rx="5" class="entity"/>
+  <text x="125" y="245" text-anchor="middle" font-weight="bold">BookingRequest</text>
+  <text x="60" y="270" class="attribute">id</text>
+  <text x="60" y="290" class="attribute">userId</text>
+  <text x="60" y="310" class="attribute">pickupLocation</text>
+  <text x="60" y="330" class="attribute">dropoffLocation</text>
+  <text x="60" y="350" class="attribute">vehicleType</text>
+
+  <!-- ActiveDriverPool Entity (Redis) -->
+  <rect x="450" y="220" width="150" height="80" rx="5" class="entity"/>
+  <text x="525" y="245" text-anchor="middle" font-weight="bold">ActiveDriverPool</text>
+  <text x="460" y="270" class="attribute">driverId</text>
+  <text x="460" y="290" class="attribute">location</text>
+
+  <!-- Relationships -->
+  <path d="M200 110 H250" fill="none" stroke="#000"/>
+  <text x="225" y="105" text-anchor="middle">extends</text>
+  
+  <path d="M125 160 V220" fill="none" stroke="#000"/>
+  <text x="145" y="200" text-anchor="middle">makes</text>
+  
+  <path d="M200 290 H250" fill="none" stroke="#000"/>
+  <text x="225" y="285" text-anchor="middle">creates</text>
+  
+  <path d="M325 160 V220" fill="none" stroke="#000"/>
+  <text x="345" y="200" text-anchor="middle">manages</text>
+  
+  <path d="M400 290 H450" fill="none" stroke="#000"/>
+  <text x="425" y="285" text-anchor="middle">updates</text>
+  
+  <path d="M525 200 V220" fill="none" stroke="#000"/>
+  <text x="545" y="210" text-anchor="middle">is in</text>
+</svg>
