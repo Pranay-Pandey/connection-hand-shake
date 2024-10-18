@@ -75,7 +75,7 @@ const DriverDashboard = () => {
         toaster.positive("Journey in progress!", {});
       }
     } catch (error) {
-      toaster.negative("Error fetching current booking.", {});
+      console.log("No active journey found.");
     }
   };
 
