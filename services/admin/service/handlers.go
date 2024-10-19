@@ -190,61 +190,66 @@ func (s *AdminService) GetVehicleLocations(c *gin.Context) {
 	}
 
 	var locations []VehicleLocation
+	// map to store driver id to index in locations slice
+	driverIndex := make(map[int32]int)
 
 	err := retry(3, 100*time.Millisecond, func() error {
+		// Get all the drivers
 		rows, err := s.pool.Query(ctx, `
-			SELECT 
-				vd.id, 
-				vd.name, 
-				vd.vehicle_type,
-				b.pickup_latitude, 
-				b.pickup_longitude,
-				b.dropoff_latitude,
-				b.dropoff_longitude,
-				b.status
-			FROM 
-				vehicle_drivers vd
-			LEFT JOIN 
-				booking b ON vd.id = b.driver_id AND b.status IN ('in_progress', 'enroute_to_pickup')
+			SELECT
+				id, name, vehicle_type 
+			FROM
+				vehicle_drivers
 		`)
 		if err != nil {
 			return fmt.Errorf("failed to fetch vehicle locations: %v", err)
 		}
 		defer rows.Close()
-
 		for rows.Next() {
 			var loc VehicleLocation
-			var pickupLat, pickupLon, dropoffLat, dropoffLon pgtype.Float8
-			var status pgtype.Text
-			if err := rows.Scan(&loc.ID, &loc.Name, &loc.VehicleType, &pickupLat, &pickupLon, &dropoffLat, &dropoffLon, &status); err != nil {
+			if err := rows.Scan(&loc.ID, &loc.Name, &loc.VehicleType); err != nil {
 				return fmt.Errorf("failed to scan vehicle location: %v", err)
 			}
-			if status.Status == pgtype.Present {
-				loc.Status = status.String
-				if status.String == "completed" || status.String == "cancelled" {
-					loc.Latitude = dropoffLat.Float
-					loc.Longitude = dropoffLon.Float
-				} else {
-					loc.Latitude = pickupLat.Float
-					loc.Longitude = pickupLon.Float
-				}
-			} else {
-				loc.Status = "idle"
-			}
-			// Get driver location
-			driverID := fmt.Sprintf("%d", loc.ID)
-			driverPos, err := s.redisClient.GeoPos(context.Background(), "driver_locations", driverID).Result()
+			loc.Status = "offline"
+			driverId := fmt.Sprintf("%d", loc.ID)
+			driverPos, err := s.redisClient.GeoPos(context.Background(), "driver_locations", driverId).Result()
 			if err == nil && len(driverPos) > 0 {
 				if driverPos != nil && driverPos[0] != nil {
 					loc.Latitude = driverPos[0].Latitude
 					loc.Longitude = driverPos[0].Longitude
+					loc.Status = "idle"
 				}
 			}
-
-			if loc.Latitude == 0 && loc.Longitude == 0 {
-				loc.Status = "offline"
-			}
+			driverIndex[loc.ID] = len(locations)
 			locations = append(locations, loc)
+		}
+
+		// get all bookings with status != completed and status != cancelled
+		active, err := s.pool.Query(ctx, `
+			SELECT
+				driver_id, dropoff_latitude, dropoff_longitude
+			FROM
+				booking
+			WHERE
+				status NOT IN ('completed', 'cancelled')
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to fetch active bookings: %v", err)
+		}
+
+		defer active.Close()
+
+		for active.Next() {
+			var driverID int32
+			var dropoffLat, dropoffLon pgtype.Float8
+			if err := active.Scan(&driverID, &dropoffLat, &dropoffLon); err != nil {
+				return fmt.Errorf("failed to scan active booking: %v", err)
+			}
+			if idx, found := driverIndex[driverID]; found {
+				locations[idx].Latitude = dropoffLat.Float
+				locations[idx].Longitude = dropoffLon.Float
+				locations[idx].Status = "enroute"
+			}
 		}
 
 		return nil
