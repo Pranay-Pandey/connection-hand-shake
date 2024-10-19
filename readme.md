@@ -5,7 +5,10 @@ A microservice architecture that is scalable and fault tolerant.
 For more information on the project, please refer to the [explanation](https://github.com/Pranay-Pandey/connection-hand-shake/blob/main/explanation.md#logistics-platform-explanation-document)
 
 
-To run it locally
+To run it locally, 
+you must have a mongoDB connection string - either locally or cloud based
+you must have a redis connection string - either locally or cloud based
+Kafka running on some port
 
 1. Clone the repository
 2. Fill the .env file with the required credentials for the database and kafka
