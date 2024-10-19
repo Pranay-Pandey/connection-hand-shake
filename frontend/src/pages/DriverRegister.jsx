@@ -30,7 +30,7 @@ export default function UserRegister() {
         alert('Please fill out all fields');
         return;
       }
-      const response = await registerDriver({ name, email, password, vehicleId, vehilceType, vehicleVolumen });
+      const response = await registerDriver({ name, email, password, vehicleId, "vehicleType": vehilceType, "vehicleVolume": vehicleVolumen });
       if (response.status === 200) {
         console.log(response.data);
         window.location.href = '/driver/login';
