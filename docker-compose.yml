@@ -1,5 +1,6 @@
 version: '3.8'
 services:
+  # CitusDB Master and Workers
   master:
     image: citusdata/citus:11.1
     environment:
@@ -33,61 +34,114 @@ services:
     volumes:
       - worker2_data:/var/lib/postgresql/data
 
+  # Application Services
   admin:
     build:
       context: ./
       dockerfile: services/admin/Dockerfile
+    networks:
+      - kafka_network
     ports:
       - "8085:8085"
-    network_mode: "host"  # Please change this according to your network configuration
     environment:
       - GIN_MODE=release
+      - KAFKA_ADDR=kafka:9092
 
   auth:
     build:
       context: ./
       dockerfile: services/authentication/Dockerfile
+    networks:
+      - kafka_network
     ports:
-      - "8081:8081" 
-    network_mode: "host"
+      - "8081:8081"
     environment:
       - GIN_MODE=release
+      - KAFKA_ADDR=kafka:9092
+      - POSTGRES_URL=postgres://user:password@localhost:5432/citus
 
   booking:
     build:
       context: ./
       dockerfile: services/booking/Dockerfile
+    networks:
+      - kafka_network
     ports:
-      - "8084:8084" 
-    network_mode: "host"
+      - "8084:8084"
     environment:
       - GIN_MODE=release
+      - KAFKA_ADDR=kafka:9092
+      - POSTGRES_URL=postgres://user:password@localhost:5432/citus
 
   driver_location:
     build:
       context: ./
       dockerfile: services/driver_location/Dockerfile
-    network_mode: "host"
+    networks:
+      - kafka_network
+    environment:
+      - GIN_MODE=release
+      - KAFKA_ADDR=kafka:9092
+      - POSTGRES_URL=postgres://user:password@localhost:5432/citus
 
   notification:
     build:
       context: ./
       dockerfile: services/notification/Dockerfile
+    networks:
+      - kafka_network
     ports:
       - "8080:8080"
-    network_mode: "host"
     environment:
       - GIN_MODE=release
+      - KAFKA_ADDR=kafka:9092
+      - POSTGRES_URL=postgres://user:password@localhost:5432/citus
 
   pricing:
     build:
       context: ./
       dockerfile: services/pricing/Dockerfile
+    networks:
+      - kafka_network
     ports:
       - "8086:8086"
-    network_mode: "host"
     environment:
       - GIN_MODE=release
+      - KAFKA_ADDR=kafka:9092
+      - POSTGRES_URL=postgres://user:password@localhost:5432/citus
+
+  
+  # Kafka and Zookeeper
+  zookeeper:
+    image: wurstmeister/zookeeper:latest
+    networks:
+      - kafka_network
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: wurstmeister/kafka:latest
+    networks:
+      - kafka_network
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    expose:
+      - "9093"
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: INSIDE://kafka:9092,OUTSIDE://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT
+      KAFKA_LISTENERS: INSIDE://:9092,OUTSIDE://:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: INSIDE
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_CREATE_TOPICS: "my-topic:1:1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+
+networks:
+  kafka_network:
+    name: kafka_docker_example_net
 
 volumes:
   master_data:
