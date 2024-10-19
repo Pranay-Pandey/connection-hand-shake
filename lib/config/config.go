@@ -5,6 +5,7 @@ import (
 )
 
 func LoadConfig() error {
+	viper.AutomaticEnv()
 	viper.SetConfigFile(".env")
 	return viper.ReadInConfig()
 }
