@@ -13,7 +13,17 @@ To run it locally
 ```bash
 docker-compose build
 ```
-4. Run the docker-compose command to start the services 
+4. Run the docker-compose command to start the services for accessing the database
+```bash
+docker-compose up -d
+```
+
+5. Make migrations
+```bash
+sh migration.sh
+```
+
+6. Run the services
 ```bash
 docker-compose up
 ```
