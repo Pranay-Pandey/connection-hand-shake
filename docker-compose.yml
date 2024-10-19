@@ -3,10 +3,15 @@ services:
   # CitusDB Master and Workers
   master:
     image: citusdata/citus:11.1
-    environment:
+    networks:
+      - kafka_network
+    environment: &AUTH
       POSTGRES_DB: citus
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
+      PGUSER: user
+      PGPASSWORD: password
+      PGDB: citus
     ports:
       - "3030:5432"
     volumes:
@@ -14,10 +19,9 @@ services:
 
   worker1:
     image: citusdata/citus:11.1
-    environment:
-      POSTGRES_DB: citus
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
+    networks:
+      - kafka_network
+    environment: *AUTH
     ports:
       - "3031:5432"
     volumes:
@@ -25,10 +29,9 @@ services:
 
   worker2:
     image: citusdata/citus:11.1
-    environment:
-      POSTGRES_DB: citus
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
+    networks:
+      - kafka_network
+    environment: *AUTH
     ports:
       - "3032:5432"
     volumes:
@@ -43,10 +46,14 @@ services:
       - kafka_network
     ports:
       - "8085:8085"
-    environment:
+    environment: &ENV
       - GIN_MODE=release
       - KAFKA_ADDR=kafka:9092
-
+      - POSTGRES_URL=postgres://user:password@master:5432/citus
+    depends_on:
+      - kafka
+      - master
+      
   auth:
     build:
       context: ./
@@ -55,11 +62,7 @@ services:
       - kafka_network
     ports:
       - "8081:8081"
-    environment:
-      - GIN_MODE=release
-      - KAFKA_ADDR=kafka:9092
-      - POSTGRES_URL=postgres://user:password@localhost:5432/citus
-
+    environment: *ENV
   booking:
     build:
       context: ./
@@ -68,10 +71,10 @@ services:
       - kafka_network
     ports:
       - "8084:8084"
-    environment:
-      - GIN_MODE=release
-      - KAFKA_ADDR=kafka:9092
-      - POSTGRES_URL=postgres://user:password@localhost:5432/citus
+    environment: *ENV
+    depends_on:
+      - kafka
+      - master
 
   driver_location:
     build:
@@ -79,10 +82,10 @@ services:
       dockerfile: services/driver_location/Dockerfile
     networks:
       - kafka_network
-    environment:
-      - GIN_MODE=release
-      - KAFKA_ADDR=kafka:9092
-      - POSTGRES_URL=postgres://user:password@localhost:5432/citus
+    environment: *ENV
+    depends_on:
+      - kafka
+      - master
 
   notification:
     build:
@@ -92,10 +95,10 @@ services:
       - kafka_network
     ports:
       - "8080:8080"
-    environment:
-      - GIN_MODE=release
-      - KAFKA_ADDR=kafka:9092
-      - POSTGRES_URL=postgres://user:password@localhost:5432/citus
+    environment: *ENV
+    depends_on:
+      - kafka
+      - master
 
   pricing:
     build:
@@ -105,11 +108,10 @@ services:
       - kafka_network
     ports:
       - "8086:8086"
-    environment:
-      - GIN_MODE=release
-      - KAFKA_ADDR=kafka:9092
-      - POSTGRES_URL=postgres://user:password@localhost:5432/citus
-
+    environment: *ENV
+    depends_on:
+      - kafka
+      - master
   
   # Kafka and Zookeeper
   zookeeper:
@@ -134,7 +136,7 @@ services:
       KAFKA_LISTENERS: INSIDE://:9092,OUTSIDE://:9093
       KAFKA_INTER_BROKER_LISTENER_NAME: INSIDE
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_CREATE_TOPICS: "my-topic:1:1"
+      KAFKA_CREATE_TOPICS: "driver_notification:1:1,driver_locations:1:1,booking_notifications:1:1"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
 
