@@ -1,5 +1,37 @@
 version: '3.8'
 services:
+  master:
+    image: citusdata/citus:11.1
+    environment:
+      POSTGRES_DB: citus
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "3030:5432"
+    volumes:
+      - master_data:/var/lib/postgresql/data
+
+  worker1:
+    image: citusdata/citus:11.1
+    environment:
+      POSTGRES_DB: citus
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "3031:5432"
+    volumes:
+      - worker1_data:/var/lib/postgresql/data
+
+  worker2:
+    image: citusdata/citus:11.1
+    environment:
+      POSTGRES_DB: citus
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "3032:5432"
+    volumes:
+      - worker2_data:/var/lib/postgresql/data
 
   admin:
     build:
@@ -58,4 +90,6 @@ services:
       - GIN_MODE=release
 
 volumes:
-  postgres_data:
+  master_data:
+  worker1_data:
+  worker2_data:
